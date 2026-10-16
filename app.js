@@ -1,5 +1,5 @@
 const KEY='roam-trip-v1';
-const defaults={name:'我的行程',days:[{stops:[{name:'台北車站',mode:'walk'},{name:'迪化街',mode:'transit'},{name:'大稻埕碼頭',mode:'walk'}]},{stops:[{name:'華山1914文化創意產業園區',mode:'walk'},{name:'永康街',mode:'transit'}]}]};
+const defaults={name:'我的行程',days:[{stops:[]}]};
 let trip;try{trip=JSON.parse(localStorage.getItem(KEY));if(!trip||typeof trip.name!=='string'||!Array.isArray(trip.days)||!trip.days.length||!trip.days.every(d=>Array.isArray(d.stops)&&d.stops.every(s=>typeof s.name==='string'&&['walk','transit','drive','bike'].includes(s.mode))))trip=null;}catch{}trip=trip||structuredClone(defaults);
 let selectedMapPlace=null,mapSelectionVersion=0;
 let current=0;const $=id=>document.getElementById(id);const modes={walk:'步行',transit:'大眾運輸',drive:'開車',bike:'自行車'};let timer;
@@ -26,7 +26,15 @@ $('toggle-panel').onclick=()=>{const hidden=document.body.classList.toggle('pane
 $('export').onclick=()=>{const content=[trip.name,...trip.days.flatMap((d,i)=>['',`Day ${i+1}`,...d.stops.map((s,j)=>`${j+1}. ${s.name}${j<d.stops.length-1?' → '+modes[s.mode]:''}`)])].join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='roam-trip.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已匯出行程');};
 
 
-let mapController=null, mapUpdateTimer;
+let mapController=null, mapUpdateTimer,userLocation=null;
+function locateUser(){
+ if(!navigator.geolocation){toast('此瀏覽器不支援定位，可直接搜尋地點');return;}
+ navigator.geolocation.getCurrentPosition(position=>{
+  userLocation={lat:position.coords.latitude,lng:position.coords.longitude};
+  if(mapController)mapController.setUserLocation(userLocation);
+  else if(!trip.days[current].stops.length)$('map').src='https://maps.google.com/maps?'+new URLSearchParams({q:`${userLocation.lat},${userLocation.lng}`,hl:'zh-TW',z:'16',t:'k',output:'embed'});
+ },error=>{toast(error.code===1?'未允許定位，可直接搜尋地點':error.code===3?'定位逾時，可直接搜尋地點':'無法取得位置，可直接搜尋地點');},{enableHighAccuracy:true,timeout:12000,maximumAge:60000});
+}
 const API_KEY_STORAGE='trip-maps-api-key';
 function mapStatus(text){$('map-status').textContent=text;}
 function queueMapUpdate(){clearTimeout(mapUpdateTimer);mapUpdateTimer=setTimeout(()=>{
@@ -57,9 +65,10 @@ async function connectGoogleMaps(key){
  const {Map}=await google.maps.importLibrary('maps');
  const {Place,AutocompleteSuggestion,AutocompleteSessionToken}=await google.maps.importLibrary('places');
  const {Route}=await google.maps.importLibrary('routes');
- const map=new Map($('google-map'),{center:{lat:25.0478,lng:121.517},zoom:14,mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
+ const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
  $('google-map').hidden=false;$('map').hidden=true;
- let version=0,markers=[],lines=[];
+ let version=0,markers=[],lines=[],userMovedMap=false;
+ map.addListener('dragstart',()=>{userMovedMap=true;});
  const locations=new globalThis.Map(),routeCache=new globalThis.Map();
  async function locate(stop){
   const id=stop.placeId||stop.name;if(locations.has(id))return locations.get(id);
@@ -70,6 +79,7 @@ async function connectGoogleMaps(key){
   const result={location:place.location,id:place.id};locations.set(id,result);locations.set(stop.name,result);return result;
  }
  mapController={
+  setUserLocation(location){if(!trip.days[current].stops.length&&!userMovedMap){map.panTo(location);map.setZoom(16);}},
   async focus(name){try{const p=await locate({name});map.panTo(p.location);map.setZoom(16);}catch(error){toast(apiError(error));}},
   async draw(stops){
    const request=++version;markers.forEach(m=>m.setMap(null));lines.forEach(l=>l.setMap(null));markers=[];lines=[];
@@ -127,3 +137,4 @@ async function connectGoogleMaps(key){
 render();
 let storedKey;try{storedKey=localStorage.getItem(API_KEY_STORAGE);}catch{}
 if(storedKey)connectGoogleMaps(storedKey);
+locateUser();
