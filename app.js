@@ -37,6 +37,15 @@ $('cancel-key').onclick=()=>$('key-dialog').close();
 $('remove-key').onclick=()=>{try{localStorage.removeItem(API_KEY_STORAGE);}catch{}location.reload();};
 $('key-form').onsubmit=e=>{e.preventDefault();const key=$('api-key').value.trim();if(!key)return;try{localStorage.setItem(API_KEY_STORAGE,key);}catch{toast('無法儲存金鑰，請允許此網站使用瀏覽器儲存空間');return;}$('api-key').value='';$('key-dialog').close();location.reload();};
 window.gm_authFailure=()=>{mapStatus('金鑰驗證失敗，請確認網站限制、API 與帳務設定。');$('settings').hidden=false;};
+function apiError(error){
+ const raw=[error?.code,error?.status,error?.message].filter(Boolean).join(' · ')||'未知錯誤';
+ const safe=raw.replace(/AIza[\w-]+/g,'[已隱藏金鑰]').replace(/([?&]key=)[^&\s]+/gi,'$1[已隱藏金鑰]').slice(0,500);
+ if(/REQUEST_DENIED|PERMISSION_DENIED|not authorized|not enabled|ApiNotActivated|API_KEY|referer|referrer|403/i.test(safe))return 'API 權限被拒絕。請確認同一把金鑰允許 Maps JavaScript API、Places API (New)、Routes API，網站限制允許 https://lhx2026-seven.github.io/*。Google：'+safe;
+ if(/BILLING|billing/i.test(safe))return '請確認 Google Cloud 帳務已啟用。Google：'+safe;
+ if(/QUOTA|RESOURCE_EXHAUSTED|OVER_QUERY_LIMIT|429/i.test(safe))return 'API 配額或速率限制，請稍後重試或檢查 Google Cloud 配額。Google：'+safe;
+ if(/ZERO_RESULTS|NOT_FOUND|無路線|找不到地點/i.test(safe))return '找不到符合的地點或交通路線，可從搜尋建議重新選點或更換交通方式。Google：'+safe;
+ return safe;
+}
 async function connectGoogleMaps(key){
  mapStatus('正在載入 Google Maps…');
  try{
@@ -60,13 +69,13 @@ async function connectGoogleMaps(key){
   const result={location:place.location,id:place.id};locations.set(id,result);locations.set(stop.name,result);return result;
  }
  mapController={
-  async focus(name){try{const p=await locate({name});map.panTo(p.location);map.setZoom(16);}catch{toast('找不到此地點');}},
+  async focus(name){try{const p=await locate({name});map.panTo(p.location);map.setZoom(16);}catch(error){toast(apiError(error));}},
   async draw(stops){
    const request=++version;markers.forEach(m=>m.setMap(null));lines.forEach(l=>l.setMap(null));markers=[];lines=[];
    if(!stops.length){mapStatus('');return;}mapStatus('正在查詢路線…');
-   const bounds=new google.maps.LatLngBounds();const points=[];let failures=0;
+   const bounds=new google.maps.LatLngBounds();const points=[];const failures=[];
    for(let i=0;i<stops.length;i++){
-    try{points[i]=await locate(stops[i]);if(request!==version)return;bounds.extend(points[i].location);const marker=new google.maps.Marker({map,position:points[i].location,label:String(i+1),title:stops[i].name});markers.push(marker);}catch{if(request!==version)return;failures++;}
+    try{points[i]=await locate(stops[i]);if(request!==version)return;bounds.extend(points[i].location);const marker=new google.maps.Marker({map,position:points[i].location,label:String(i+1),title:stops[i].name});markers.push(marker);}catch(error){if(request!==version)return;failures.push(`地點 ${i+1}（${stops[i].name}）：${apiError(error)}`);}
    }
    if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
    let distance=0,seconds=0,routeCount=0;const warnings=new Set();
@@ -79,11 +88,11 @@ async function connectGoogleMaps(key){
      if(!route){const result=await Route.computeRoutes({origin:points[i].location,destination:points[i+1].location,travelMode,fields:['path','distanceMeters','durationMillis','warnings']});route=result.routes?.[0];if(!route)throw Error('無路線');routeCache.set(cacheId,route);}
      if(request!==version)return;
      for(const line of route.createPolylines({polylineOptions:{strokeColor:stops[i].mode==='transit'?'#188038':'#1a73e8',strokeOpacity:.85,strokeWeight:5}})){line.setMap(map);lines.push(line);}for(const warning of route.warnings||[])warnings.add(warning);distance+=route.distanceMeters||0;seconds+=(route.durationMillis||0)/1000;routeCount++;
-    }catch{if(request!==version)return;failures++;}
+    }catch(error){if(request!==version)return;failures.push(`路段 ${i+1}（${stops[i].name} → ${stops[i+1].name}，${modes[stops[i].mode]}）：${apiError(error)}`);}
    }
    if(request!==version)return;
    const info=routeCount?`${(distance/1000).toFixed(1)} 公里 · ${Math.ceil(seconds/60)} 分鐘`:'';
-   mapStatus(failures?`${info?info+' · ':''}部分地點或路線查詢失敗，請檢查金鑰設定或改用其他交通方式。`:[info,...warnings].filter(Boolean).join(' · '));
+   mapStatus([info?(failures.length?'已成功路段：':'')+info:'',...failures,...warnings].filter(Boolean).join('\n')); 
   }
  };
  // Use Google's current Places autocomplete; retain plain text entry as a fallback.
@@ -91,11 +100,11 @@ async function connectGoogleMaps(key){
  let session=new AutocompleteSessionToken(),searchTimer,searchVersion=0;
  $('place').addEventListener('input',()=>{const n=++searchVersion;clearTimeout(searchTimer);suggestions.replaceChildren();const input=$('place').value.trim();if(!input)return;searchTimer=setTimeout(async()=>{
   try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];try{const place=prediction.toPlace();await place.fetchFields({fields:['location']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch{toast('地點詳細資料載入失敗，將於路線查詢時重試');}chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk'});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
-  catch{if(n===searchVersion)mapStatus('地點建議無法載入，仍可輸入完整地址。');}
+  catch(error){if(n===searchVersion)mapStatus('地點建議：'+apiError(error));}
  },300);});
  $('add-form').addEventListener('submit',()=>{searchVersion++;suggestions.replaceChildren();});
  mapStatus('');queueMapUpdate();
- }catch{mapStatus('Google Maps 無法載入，請確認網路與 API 設定。');}
+ }catch(error){mapStatus('Google Maps 載入失敗：'+apiError(error));}
 }
 render();
 let storedKey;try{storedKey=localStorage.getItem(API_KEY_STORAGE);}catch{}
