@@ -1,19 +1,25 @@
-# ROAM 旅程規劃
+# 地圖行程工具
 
-繁體中文、多日行程規劃頁面。支援不限數量的停靠點、逐段交通方式、排序、刪除、裝置內自動儲存，以及文字匯出。資料保留於瀏覽器 localStorage；容量受瀏覽器限制，建議定期匯出。
+滿版 Google Maps 嵌入地圖，搭配可收合的行程面板。
+
+- 自由新增停靠點、調整順序與刪除
+- 逐段選擇步行、開車、大眾運輸或自行車
+- 分天安排、自動儲存於瀏覽器、文字匯出
+- 點選地點旁的定位按鈕，在地圖顯示該地點
+- 點選每段「路線」，以該段交通方式開啟 Google Maps 導航
 
 ## 執行
 
-需要 Node.js 18 以上，無外部 npm 依賴。
+Node.js 18 以上，無需安裝 npm 依賴。
 
 ```sh
 npm start
 ```
 
-預設使用 3000 port，可透過 `PORT` 調整。`npm run check` 檢查 JavaScript 語法。
+預設 port 3000，可透過 PORT 變數調整。`npm run check` 檢查 JavaScript 語法。
 
-## 地圖範圍
+## 地圖
 
-目前地圖為 SVG 示意圖，標記不是地理定位結果，不提供即時路況、地點搜尋建議、距離或 ETA。輸入任意地名後，可選擇路段並透過 Google Maps 查詢實際導航；每段分別開啟以保留交通方式。Google Maps 對自行車和大眾運輸的支援依所在地區而異。
+使用 Google Maps iframe 顯示真實互動地圖，須可連線 Google Maps。行程停靠點無程式設定的數量上限，資料容量受瀏覽器 localStorage 限制。
 
-若要在頁面內呈現實際 Google Maps 與路線，後續需串接 Google Maps JavaScript API、Places 及 Routes API，並設定金鑰、網域限制與帳務。
+目前 iframe 顯示所選地點，未在內嵌地圖繪製整日行程或混合交通路線。實際路線於 Google Maps 分段查詢。如需在本頁繪製路線、取得時間及距離或提供地點自動完成，需另外串接 Google Maps JavaScript API / Places / Routes API，並設定 API 金鑰與帳務。本工具為獨立專案，非 Google 官方產品或 Google Maps 網站擴充套件。
