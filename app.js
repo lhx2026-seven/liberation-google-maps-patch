@@ -7,7 +7,7 @@ let selectedMapPlace=null,mapSelectionVersion=0;
 let current=0;const $=id=>document.getElementById(id);const modes={walk:'步行',transit:'大眾運輸',drive:'開車',bike:'自行車'};let timer;
 function toast(message){$('toast').textContent=message;$('toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('toast').style.display='none',3500);}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(trip));$('save-status').textContent='已儲存';}catch{$('save-status').textContent='尚未儲存';toast('裝置無法儲存，請匯出行程以保留變更');}}
-function button(label,title,fn){const b=document.createElement('button');b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;return b;}
+function button(label,title,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;return b;}
 function render(){
  $('trip-name').value=trip.name;$('trip-count').textContent=`${trip.days.length} 天 · ${trip.days.reduce((n,d)=>n+d.stops.length,0)} 個停靠點`;
  $('days').replaceChildren();trip.days.forEach((d,i)=>{const b=button(`第 ${i+1} 天`,`第 ${i+1} 天`,()=>{current=i;render();});b.className=i===current?'active':'';b.setAttribute('role','tab');b.setAttribute('aria-selected',i===current);$('days').append(b);});
@@ -43,10 +43,26 @@ function queueMapUpdate(){clearTimeout(mapUpdateTimer);mapUpdateTimer=setTimeout
  if(mapController)mapController.draw(trip.days[current].stops.map(s=>({...s})));
  else {const stop=trip.days[current].stops[0];if(stop)showPlace(stop.name);}
 },250);}
-$('settings').onclick=()=>{$('api-key').value='';$('key-dialog').showModal();};
+let activeApiKey='';
+function readApiKey(){try{return localStorage.getItem(API_KEY_STORAGE)||'';}catch{return '';}}
+function updateKeyStatus(){
+ const configured=Boolean(activeApiKey||readApiKey());
+ $('key-state').textContent=configured?'已設定金鑰，搜尋時不需重新輸入。輸入新金鑰才會替換。':'尚未設定金鑰。';
+ $('api-key').required=!configured;
+ $('api-key').placeholder=configured?'保留現有金鑰，或輸入新金鑰':'輸入 API 金鑰';
+}
+$('settings').onclick=()=>{updateKeyStatus();$('api-key').value='';$('key-dialog').showModal();};
 $('cancel-key').onclick=()=>$('key-dialog').close();
-$('remove-key').onclick=()=>{try{localStorage.removeItem(API_KEY_STORAGE);}catch{}location.reload();};
-$('key-form').onsubmit=e=>{e.preventDefault();const key=$('api-key').value.trim();if(!key)return;try{localStorage.setItem(API_KEY_STORAGE,key);}catch{toast('無法儲存金鑰，請允許此網站使用瀏覽器儲存空間');return;}$('api-key').value='';$('key-dialog').close();location.reload();};
+$('remove-key').onclick=()=>{try{localStorage.removeItem(API_KEY_STORAGE);}catch{}activeApiKey='';location.reload();};
+$('key-form').onsubmit=e=>{
+ e.preventDefault();const key=$('api-key').value.trim()||activeApiKey||readApiKey();if(!key)return;
+ const replacing=Boolean(activeApiKey&&activeApiKey!==key);
+ try{localStorage.setItem(API_KEY_STORAGE,key);}catch{toast('此瀏覽器無法永久儲存金鑰；本次頁面仍可使用，請勿重新整理。');}
+ $('api-key').value='';$('key-dialog').close();
+ if(replacing){location.reload();return;}
+ if(activeApiKey===key&&mapController)return;
+ activeApiKey=key;connectGoogleMaps(key);
+};
 window.gm_authFailure=()=>{mapStatus('金鑰驗證失敗，請確認網站限制、API 與帳務設定。');$('settings').hidden=false;};
 function formatTravelTime(milliseconds){
  if(!Number.isFinite(milliseconds))return '時間未知';
@@ -65,13 +81,17 @@ function apiError(error){
 async function connectGoogleMaps(key){
  mapStatus('正在載入 Google Maps…');
  try{
- await new Promise((resolve,reject)=>{
+ if(!globalThis.google?.maps?.importLibrary)await new Promise((resolve,reject)=>{
   const callback='initializeTripGoogleMaps';window[callback]=()=>{delete window[callback];resolve();};
   const script=document.createElement('script');script.async=true;script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',language:'zh-TW',callback});script.onerror=()=>reject(Error('載入失敗'));document.head.append(script);
  });
  const {Map}=await google.maps.importLibrary('maps');
  const {Place,AutocompleteSuggestion,AutocompleteSessionToken}=await google.maps.importLibrary('places');
- const {Route}=await google.maps.importLibrary('routes');
+ let routeLibrary;
+ async function getRouteLibrary(){
+  if(!routeLibrary)routeLibrary=google.maps.importLibrary('routes').catch(error=>{routeLibrary=null;throw error;});
+  return routeLibrary;
+ }
  const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
  $('google-map').hidden=false;$('map').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
@@ -108,7 +128,7 @@ async function connectGoogleMaps(key){
     const timing=travelMode==='DRIVING'?{departureTime,routingPreference:'TRAFFIC_AWARE'}:travelMode==='TRANSIT'?{departureTime}:{};
     try{
      let route=routeCache.get(cacheId);
-     if(!route){const result=await Route.computeRoutes({origin:points[i].location,destination:points[i+1].location,travelMode,...timing,fields:['path','distanceMeters','durationMillis','warnings']});route=result.routes?.[0];if(!route)throw Error('無路線');routeCache.set(cacheId,route);}
+     if(!route){const {Route}=await getRouteLibrary();const result=await Route.computeRoutes({origin:points[i].location,destination:points[i+1].location,travelMode,...timing,fields:['path','distanceMeters','durationMillis','warnings']});route=result.routes?.[0];if(!route)throw Error('無路線');routeCache.set(cacheId,route);}
      if(request!==version)return;
      const selectedStop=trip.days[current].stops[i]||stops[i];const segmentLines=route.createPolylines({polylineOptions:{strokeColor:routeColors[routeColor(selectedStop)].hex,strokeOpacity:.85,strokeWeight:5}});legLines.set(i,segmentLines);for(const line of segmentLines){line.setMap(map);lines.push(line);}for(const warning of route.warnings||[])warnings.add(warning);if(estimate)estimate.textContent='預估時間：約 '+formatTravelTime(route.durationMillis);if(!timelineKnown&&travelMode==='TRANSIT')warnings.add('部分前段時間未知，後續班次時間僅供參考。');distance+=route.distanceMeters||0;if(Number.isFinite(route.durationMillis))seconds+=route.durationMillis/1000;else{timelineKnown=false;warnings.add('部分路段未回傳時間，合計未包含該段。');}routeCount++;
     }catch(error){if(request!==version)return;if(estimate)estimate.textContent='預估時間：查詢失敗';timelineKnown=false;failures.push(`路段 ${i+1}（${stops[i].name} → ${stops[i+1].name}，${modes[stops[i].mode]}）：${apiError(error)}`);}
@@ -122,7 +142,7 @@ async function connectGoogleMaps(key){
  const suggestions=document.createElement('div');suggestions.id='suggestions';$('add-form').append(suggestions);
  let session=new AutocompleteSessionToken(),searchTimer,searchVersion=0;
  $('place').addEventListener('input',()=>{selectedMapPlace=null;mapSelectionVersion++;const n=++searchVersion;clearTimeout(searchTimer);suggestions.replaceChildren();const input=$('place').value.trim();if(!input)return;searchTimer=setTimeout(async()=>{
-  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];try{const place=prediction.toPlace();await place.fetchFields({fields:['location']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch{toast('地點詳細資料載入失敗，將於路線查詢時重試');}chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk'});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
+  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];try{const place=prediction.toPlace();await place.fetchFields({fields:['location']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch(error){toast('地點資料：'+apiError(error));}chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk'});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
   catch(error){if(n===searchVersion)mapStatus('地點建議：'+apiError(error));}
  },300);});
  function fillFromMap(name,placeId){
@@ -143,10 +163,11 @@ async function connectGoogleMaps(key){
   }catch(error){if(request===mapSelectionVersion)toast(apiError(error));}
  });
  $('add-form').addEventListener('submit',()=>{searchVersion++;suggestions.replaceChildren();});
- mapStatus('');queueMapUpdate();
+ $('key-state').textContent='金鑰已連線，搜尋時不需重新輸入。';mapStatus('');queueMapUpdate();
  }catch(error){mapStatus('Google Maps 載入失敗：'+apiError(error));}
 }
 render();
-let storedKey;try{storedKey=localStorage.getItem(API_KEY_STORAGE);}catch{}
-if(storedKey)connectGoogleMaps(storedKey);
+activeApiKey=readApiKey();
+updateKeyStatus();
+if(activeApiKey)connectGoogleMaps(activeApiKey);
 locateUser();
