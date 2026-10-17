@@ -92,7 +92,7 @@ async function connectGoogleMaps(key){
   if(!routeLibrary)routeLibrary=google.maps.importLibrary('routes').catch(error=>{routeLibrary=null;throw error;});
   return routeLibrary;
  }
- const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
+ const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',scrollwheel:true,draggable:true,mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
  $('google-map').hidden=false;$('map').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
  map.addListener('dragstart',()=>{userMovedMap=true;});
