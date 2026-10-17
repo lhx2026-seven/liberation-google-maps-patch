@@ -6,3 +6,5 @@
 .leg{grid-template-columns:minmax(0,1fr) 28px auto}.leg .route-color{position:relative;width:28px;align-self:center}.route-color summary{display:block;width:22px;height:22px;border-radius:4px;border:1px solid #0002;cursor:pointer;list-style:none}.route-color summary::-webkit-details-marker{display:none}.route-color summary:focus-visible{outline:2px solid #1a73e8;outline-offset:3px}.color-palette{position:absolute;top:28px;right:0;z-index:4;display:grid;grid-template-columns:repeat(3,28px);gap:8px;padding:10px;background:#fff;border:1px solid #dadce0;border-radius:8px;box-shadow:0 3px 12px #0003}.color-palette button{width:28px;height:28px;min-width:28px;border-radius:4px;padding:0;margin:0;border:1px solid #0002}.color-palette button[aria-pressed=true]{outline:2px solid #3c4043;outline-offset:2px}
 
 .add-input{margin-left:34px;gap:8px}
+
+.day-actions{display:flex;align-items:center;gap:2px}.day-actions button{padding:6px;border-radius:4px;white-space:nowrap}.day-actions button:hover:not(:disabled){background:#f1f3f4}.day-actions button:disabled{opacity:.35;cursor:default}.day-heading>span{white-space:nowrap}.day-actions button[hidden]{display:none}
