@@ -25,6 +25,16 @@ jobs:
       - run: |
           mkdir _site
           cp index.html app.js style.css _site/
+          python3 - <<'PYVERSION'
+          from pathlib import Path
+          import hashlib, re
+          page = Path('_site/index.html')
+          html = page.read_text()
+          for asset in ('app.js', 'style.css'):
+              version = hashlib.sha256(Path('_site', asset).read_bytes()).hexdigest()[:12]
+              html = re.sub(r'\./' + re.escape(asset) + r'(?:\?v=[^"\s]+)?', './' + asset + '?v=' + version, html)
+          page.write_text(html)
+          PYVERSION
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
