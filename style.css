@@ -9,4 +9,5 @@
 
 .day-actions{display:flex;align-items:center;gap:2px}.day-actions button{padding:6px;border-radius:4px;white-space:nowrap}.day-actions button:hover:not(:disabled){background:#f1f3f4}.day-actions button:disabled{opacity:.35;cursor:default}.day-heading>span{white-space:nowrap}.day-actions button[hidden]{display:none}
 
-.departure-row{display:flex;align-items:center;gap:8px;padding:5px 20px 12px;font-size:11px;color:#5f6368}.departure-row label{white-space:nowrap}.departure-row input{min-width:0;flex:1;border:1px solid #dadce0;border-radius:4px;padding:6px;color:#3c4043;font:inherit;background:white}.departure-row button{color:#1a73e8;white-space:nowrap;padding:5px}.departure-row input:empty{color:#3c4043}
+
+@media(max-width:600px){.sidebar{display:block;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}.route-content{overflow:visible}#map-status{max-height:none;overflow:visible}}

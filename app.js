@@ -14,15 +14,13 @@ function render(){
  $('trip-name').value=trip.name;$('trip-count').textContent=`${trip.days.length} 天 · ${trip.days.reduce((n,d)=>n+d.stops.length,0)} 個停靠點`;
  $('days').replaceChildren();trip.days.forEach((d,i)=>{const b=button(`第 ${i+1} 天`,`第 ${i+1} 天`,()=>{current=i;render();});b.className=i===current?'active':'';b.setAttribute('role','tab');b.setAttribute('aria-selected',i===current);$('days').append(b);});
  $('day-title').textContent=`第 ${current+1} 天`;$('delete-day').hidden=trip.days.length===1;$('clear-day').disabled=trip.days[current].stops.length===0;$('move-day-before').disabled=current===0;$('move-day-after').disabled=current===trip.days.length-1;
- const stops=trip.days[current].stops;$('stops').replaceChildren();$('departure-time').value=trip.days[current].departureTime||'';$('departure-time').title='出發時間（'+Intl.DateTimeFormat().resolvedOptions().timeZone+'）';
+ const stops=trip.days[current].stops;$('stops').replaceChildren();
  stops.forEach((stop,i)=>{const row=document.createElement('div');row.className='stop';const marker=document.createElement('div');marker.className='stop-marker';marker.textContent=i+1;const main=document.createElement('div');main.className='stop-main';const card=document.createElement('div');card.className='stop-card';const text=document.createElement('div');text.style.cssText='flex:1;min-width:0';const input=document.createElement('input');input.value=stop.name;input.maxLength=160;input.setAttribute('aria-label',`停靠點 ${i+1}`);input.ondblclick=()=>showPlace(stop.name);input.onchange=()=>{if(input.value.trim()){stop.name=input.value.trim();delete stop.placeId;save();render();}else input.value=stop.name;};text.append(input);const tools=document.createElement('div');tools.className='stop-tools';tools.append(button('⌖','在地圖顯示',()=>showPlace(stop.name)));if(i>0)tools.append(button('↑','向上移動',()=>{[stops[i-1],stops[i]]=[stops[i],stops[i-1]];save();render();}));if(i<stops.length-1)tools.append(button('↓','向下移動',()=>{[stops[i+1],stops[i]]=[stops[i],stops[i+1]];save();render();}));tools.append(button('×','移除停靠點',()=>{stops.splice(i,1);save();render();}));card.append(text,tools);main.append(card);if(i<stops.length-1){const leg=document.createElement('div');leg.className='leg';const icon=document.createElement('span');icon.textContent='↳';const select=document.createElement('select');select.setAttribute('aria-label',`從 ${stop.name} 出發的交通方式`);select.dataset.modeIndex=i;Object.entries(modes).forEach(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;option.selected=stop.mode===value;select.append(option);});select.onchange=()=>{stop.mode=select.value;stop.modeAuto=false;save();render();};const navigate=button('路線 ↗','在 Google Maps 開啟此路段',()=>openLeg(i));const estimate=document.createElement('span');estimate.className='leg-estimate';estimate.dataset.leg=i;estimate.textContent='預估時間：待查詢';const colorSelect=document.createElement('details');colorSelect.className='route-color';const swatch=document.createElement('summary');swatch.setAttribute('aria-label',`路段 ${i+1} 顏色`);swatch.title='路線顏色';swatch.style.backgroundColor=routeColors[routeColor(stop)].hex;const palette=document.createElement('div');palette.className='color-palette';palette.setAttribute('role','group');palette.setAttribute('aria-label','路線顏色');Object.entries(routeColors).forEach(([value,color])=>{const choice=button('',color.label+'色',()=>{stop.color=value;swatch.style.backgroundColor=color.hex;palette.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===choice)));colorSelect.open=false;save();mapController?.setLegColor(i,value);swatch.focus();});choice.style.backgroundColor=color.hex;choice.setAttribute('aria-pressed',String(value===routeColor(stop)));palette.append(choice);});colorSelect.append(swatch,palette);leg.append(select,colorSelect,navigate,estimate);main.append(leg);}row.append(marker,main);$('stops').append(row);});
  if(!stops.length){const empty=document.createElement('p');empty.textContent='新增目的地';empty.style.cssText='color:#80868b;font-size:13px;padding:8px 0';$('stops').append(empty);}
  queueMapUpdate();
 
 }
 $('trip-name').onchange=()=>{trip.name=$('trip-name').value.trim()||'我的旅程';save();render();};
-$('departure-time').onchange=()=>{trip.days[current].departureTime=$('departure-time').value;save();render();};
-$('departure-now').onclick=()=>{delete trip.days[current].departureTime;save();render();};
 $('add-day').onclick=()=>{trip.days.push({stops:[]});current=trip.days.length-1;save();render();$('place').focus();};
 function resetDestinationInput(){
  mapSelectionVersion++;selectedMapPlace=null;$('place').value='';$('place').dispatchEvent(new Event('input'));
@@ -90,7 +88,7 @@ function formatTravelTime(milliseconds){
 function apiError(error){
  const raw=[error?.code,error?.status,error?.message].filter(Boolean).join(' · ')||'未知錯誤';
  const safe=raw.replace(/AIza[\w-]+/g,'[已隱藏金鑰]').replace(/([?&]key=)[^&\s]+/gi,'$1[已隱藏金鑰]').slice(0,500);
- if(error?.code==='TRANSIT_NO_ROUTES')return 'Google API 在此出發時間沒有回傳大眾運輸路線，不代表地點錯誤。請調整出發時間，或點「路線 ↗」在 Google Maps 查詢；兩者的資料涵蓋可能不同。';
+ if(error?.code==='TRANSIT_NO_ROUTES')return 'Google API 在此出發時間沒有回傳大眾運輸路線，不代表地點錯誤。可點「路線 ↗」在 Google Maps 查詢；兩者的資料涵蓋可能不同。';
  if(/REQUEST_DENIED|PERMISSION_DENIED|not authorized|not enabled|ApiNotActivated|API_KEY|referer|referrer|403/i.test(safe))return 'API 權限被拒絕。請確認同一把金鑰允許 Maps JavaScript API、Places API (New)、Routes API，網站限制允許 https://lhx2026-seven.github.io/*。Google：'+safe;
  if(/BILLING|billing/i.test(safe))return '請確認 Google Cloud 帳務已啟用。Google：'+safe;
  if(/QUOTA|RESOURCE_EXHAUSTED|OVER_QUERY_LIMIT|429/i.test(safe))return 'API 配額或速率限制，請稍後重試或檢查 Google Cloud 配額。Google：'+safe;
@@ -138,13 +136,7 @@ async function connectGoogleMaps(key){
     try{points[i]=await locate(stops[i]);if(request!==version)return;bounds.extend(points[i].location);const marker=new google.maps.Marker({map,position:points[i].location,label:String(i+1),title:stops[i].name});marker.addListener('click',()=>fillFromMap(stops[i].name,points[i].id));markers.push(marker);}catch(error){if(request!==version)return;failures.push(`地點 ${i+1}（${stops[i].name}）：${apiError(error)}`);}
    }
    if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
-   const scheduledDeparture=trip.days[current].departureTime;
-   const requestedStart=scheduledDeparture?new Date(scheduledDeparture).getTime():Date.now()+60000;
-   if(!Number.isFinite(requestedStart)||(scheduledDeparture&&requestedStart<Date.now()-60000)){
-    document.querySelectorAll('.leg-estimate').forEach(el=>{el.textContent='請調整出發時間';});
-    mapStatus('出發時間已過或無效，請重新設定，或按「現在」。');return;
-   }
-   let distance=0,seconds=0,routeCount=0;const warnings=new Set();const startTime=Math.max(requestedStart,Date.now()+60000);let timelineKnown=true;
+   let distance=0,seconds=0,routeCount=0;const warnings=new Set();const startTime=Date.now()+60000;let timelineKnown=true;
    for(let i=0;i<stops.length-1;i++){
     if(request!==version)return;const estimate=document.querySelector(`[data-leg="${i}"]`);if(!points[i]||!points[i+1]){if(estimate)estimate.textContent='預估時間：地點查詢失敗';timelineKnown=false;continue;}
     let automaticWalkingRoute;
