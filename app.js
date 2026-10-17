@@ -86,7 +86,7 @@ async function connectGoogleMaps(key){
   const script=document.createElement('script');script.async=true;script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',language:'zh-TW',callback});script.onerror=()=>reject(Error('載入失敗'));document.head.append(script);
  });
  const {Map}=await google.maps.importLibrary('maps');
- const {Place,AutocompleteSuggestion,AutocompleteSessionToken}=await google.maps.importLibrary('places');
+ const {Place,AutocompleteSuggestion,AutocompleteSessionToken,SearchNearbyRankPreference}=await google.maps.importLibrary('places');
  let routeLibrary;
  async function getRouteLibrary(){
   if(!routeLibrary)routeLibrary=google.maps.importLibrary('routes').catch(error=>{routeLibrary=null;throw error;});
@@ -152,10 +152,30 @@ async function connectGoogleMaps(key){
   $('place').scrollIntoView({block:'nearest'});$('place').focus({preventScroll:true});
  }
  map.addListener('click',async event=>{
-  if(!event.placeId)return;
-  event.stop();const request=++mapSelectionVersion;const inputBefore=$('place').value;
+  if(!event.placeId&&!event.latLng)return;
+  if(event.placeId)event.stop();
+  const request=++mapSelectionVersion;const inputBefore=$('place').value;
   try{
-   const place=new Place({id:event.placeId});await place.fetchFields({fields:['displayName','formattedAddress','location']});
+   let place;
+   if(event.placeId){
+    place=new Place({id:event.placeId});await place.fetchFields({fields:['displayName','formattedAddress','location']});
+   }else{
+    // Some station icons emit coordinates without a place ID. Only look for
+    // stations in a small radius at street-level zoom, not arbitrary landmarks.
+    if(map.getZoom()<13)return;
+    const result=await Place.searchNearby({fields:['id','displayName','location'],locationRestriction:{center:event.latLng,radius:60},includedTypes:['train_station','subway_station','light_rail_station','transit_station','bus_station'],rankPreference:SearchNearbyRankPreference.DISTANCE,maxResultCount:5});
+    if(request!==mapSelectionVersion||$('place').value!==inputBefore)return;
+    const stations=(result.places||[]).filter(p=>p.id&&p.displayName);
+    if(!stations.length)return;
+    if(stations.length>1){
+     clearTimeout(searchTimer);searchVersion++;suggestions.replaceChildren();
+     for(const station of stations){const b=button(station.displayName,'選取 '+station.displayName,()=>{if(station.location)locations.set(station.id,{id:station.id,location:station.location});fillFromMap(station.displayName,station.id);});suggestions.append(b);}
+     const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);
+     document.body.classList.remove('panel-hidden');$('toggle-panel').textContent='‹';$('toggle-panel').setAttribute('aria-expanded','true');$('toggle-panel').setAttribute('aria-label','收合行程面板');
+     suggestions.scrollIntoView({block:'nearest'});toast('附近有多個車站，請選擇目的地');return;
+    }
+    place=stations[0];
+   }
    if(request!==mapSelectionVersion||$('place').value!==inputBefore)return;
    const name=place.displayName||place.formattedAddress;if(!name){toast('無法取得此地點名稱');return;}
    if(place.location)locations.set(place.id,{id:place.id,location:place.location});
