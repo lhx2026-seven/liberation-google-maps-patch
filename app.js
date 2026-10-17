@@ -98,11 +98,12 @@ async function connectGoogleMaps(key){
     try{points[i]=await locate(stops[i]);if(request!==version)return;bounds.extend(points[i].location);const marker=new google.maps.Marker({map,position:points[i].location,label:String(i+1),title:stops[i].name});marker.addListener('click',()=>fillFromMap(stops[i].name,points[i].id));markers.push(marker);}catch(error){if(request!==version)return;failures.push(`地點 ${i+1}（${stops[i].name}）：${apiError(error)}`);}
    }
    if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
-   let distance=0,seconds=0,routeCount=0;const warnings=new Set();const startTime=Date.now();let timelineKnown=true;
+   let distance=0,seconds=0,routeCount=0;const warnings=new Set();const startTime=Date.now()+60000;let timelineKnown=true;
    for(let i=0;i<stops.length-1;i++){
     if(request!==version)return;const estimate=document.querySelector(`[data-leg="${i}"]`);if(!points[i]||!points[i+1]){if(estimate)estimate.textContent='預估時間：地點查詢失敗';timelineKnown=false;continue;}
     const travelMode={walk:'WALKING',drive:'DRIVING',transit:'TRANSIT',bike:'BICYCLING'}[stops[i].mode];
-    const departureTime=new Date(startTime+seconds*1000);
+    // Keep requests in the future even after slow lookups or earlier route requests.
+    const departureTime=new Date(Math.max(startTime+seconds*1000,Date.now()+60000));
     const cacheId=JSON.stringify([points[i].id,points[i+1].id,travelMode,Math.floor(departureTime.getTime()/300000)]);
     const timing=travelMode==='DRIVING'?{departureTime,routingPreference:'TRAFFIC_AWARE'}:travelMode==='TRANSIT'?{departureTime}:{};
     try{
