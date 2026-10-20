@@ -1,1 +1,14 @@
-{"name":"roam-trip-planner","version":"1.0.0","private":true,"scripts":{"dev":"node server.js","start":"node server.js","check":"node --check app.js && node --check server.js"}}
+{
+  "name": "roam-trip-planner",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js",
+    "test": "node --test tests/browser.test.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

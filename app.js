@@ -46,7 +46,7 @@ $('move-day-before').onclick=()=>moveCurrentDay(-1);
 $('move-day-after').onclick=()=>moveCurrentDay(1);
 $('delete-day').onclick=()=>{if(trip.days.length>1&&confirm('確定刪除這一天及其所有停靠點？')){trip.days.splice(current,1);current=Math.min(current,trip.days.length-1);resetDestinationInput();save();render();}};
 $('add-form').onsubmit=e=>{e.preventDefault();const name=$('place').value.trim();if(!name)return;mapSelectionVersion++;trip.days[current].stops.push({name,...(selectedMapPlace?.name===name?{placeId:selectedMapPlace.placeId}:{}),mode:'walk',modeAuto:true});selectedMapPlace=null;$('place').value='';save();render();$('place').focus();};
-function showPlace(name){if(mapController){mapController.focus(name);return;}const url='https://maps.google.com/maps?'+new URLSearchParams({q:name,hl:'zh-TW',z:'14',t:'k',output:'embed'});if($('map').getAttribute('src')!==url)$('map').src=url;}
+function showPlace(name){if(mapController){mapController.focus(name);return;}toast('地圖尚未連線，請按「重新連線」。');}
 function openLeg(index){const stops=trip.days[current].stops;const start=stops[index],end=stops[index+1];const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',bike:'bicycling'}[start.mode]});window.open('https://www.google.com/maps/dir/?'+params,'_blank','noopener,noreferrer');}
 $('toggle-panel').onclick=()=>{const hidden=document.body.classList.toggle('panel-hidden');$('toggle-panel').textContent=hidden?'›':'‹';$('toggle-panel').setAttribute('aria-expanded',String(!hidden));$('toggle-panel').setAttribute('aria-label',hidden?'展開行程面板':'收合行程面板');};
 $('export').onclick=()=>{const content=[trip.name,...trip.days.flatMap((d,i)=>['',`Day ${i+1}`,...d.stops.map((s,j)=>`${j+1}. ${s.name}${j<d.stops.length-1?' → '+modes[s.mode]:''}`)])].join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='roam-trip.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已匯出行程');};
@@ -58,16 +58,17 @@ function locateUser(){
  navigator.geolocation.getCurrentPosition(position=>{
   userLocation={lat:position.coords.latitude,lng:position.coords.longitude};
   if(mapController)mapController.setUserLocation(userLocation);
-  else if(!trip.days[current].stops.length)$('map').src='https://maps.google.com/maps?'+new URLSearchParams({q:`${userLocation.lat},${userLocation.lng}`,hl:'zh-TW',z:'16',t:'k',output:'embed'});
+
  },error=>{toast(error.code===1?'未允許定位，可直接搜尋地點':error.code===3?'定位逾時，可直接搜尋地點':'無法取得位置，可直接搜尋地點');},{enableHighAccuracy:true,timeout:12000,maximumAge:60000});
 }
 const API_KEY_STORAGE='trip-maps-api-key';
 function mapStatus(text){$('map-status').textContent=text;}
 function queueMapUpdate(){mapController?.cancelPending();clearTimeout(mapUpdateTimer);mapUpdateTimer=setTimeout(()=>{
  if(mapController)mapController.draw(trip.days[current].stops.map(s=>({...s})));
- else {const stop=trip.days[current].stops[0];if(stop)showPlace(stop.name);}
+
 },250);}
-let activeApiKey='';
+let activeApiKey='',connectionPromise=null;
+function connectionState(message){$('map-recovery-message').textContent=message;}
 function readApiKey(){try{return localStorage.getItem(API_KEY_STORAGE)||'';}catch{return '';}}
 function updateKeyStatus(){
  const configured=Boolean(activeApiKey||readApiKey());
@@ -87,7 +88,8 @@ $('key-form').onsubmit=e=>{
  if(activeApiKey===key&&mapController)return;
  activeApiKey=key;connectGoogleMaps(key);
 };
-window.gm_authFailure=()=>{mapStatus('金鑰驗證失敗，請確認網站限制、API 與帳務設定。');$('settings').hidden=false;};
+window.gm_authFailure=()=>{const message='Google 拒絕金鑰驗證，請檢查網站限制、API 權限或帳務。';mapStatus(message);connectionState(message);$('map-recovery').hidden=false;};
+$('reconnect-map').onclick=()=>{const key=activeApiKey||readApiKey();if(!key){updateKeyStatus();$('key-dialog').showModal();return;}activeApiKey=key;connectGoogleMaps(key);};
 function formatTravelTime(milliseconds){
  if(!Number.isFinite(milliseconds))return '時間未知';
  const minutes=Math.max(1,Math.ceil(milliseconds/60000));
@@ -103,12 +105,21 @@ function apiError(error){
  if(/ZERO_RESULTS|NOT_FOUND|無路線|找不到地點/i.test(safe))return '找不到符合的地點或交通路線，可從搜尋建議重新選點或更換交通方式。Google：'+safe;
  return safe;
 }
-async function connectGoogleMaps(key){
- mapStatus('正在載入 Google Maps…');
+function connectGoogleMaps(key){
+ if(connectionPromise)return connectionPromise;
+ if(mapController){queueMapUpdate();return Promise.resolve();}
+ connectionPromise=initializeGoogleMaps(key).finally(()=>{connectionPromise=null;$('reconnect-map').disabled=false;});return connectionPromise;
+}
+async function initializeGoogleMaps(key){
+ $('reconnect-map').disabled=true;connectionState('正在連線 Google Maps…');mapStatus('正在載入 Google Maps…');
  try{
  if(!globalThis.google?.maps?.importLibrary)await new Promise((resolve,reject)=>{
-  const callback='initializeTripGoogleMaps';window[callback]=()=>{delete window[callback];resolve();};
-  const script=document.createElement('script');script.async=true;script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',language:'zh-TW',callback});script.onerror=()=>reject(Error('載入失敗'));document.head.append(script);
+  const callback='initializeTripGoogleMaps';
+  const script=document.createElement('script');
+  const timeout=setTimeout(()=>{cleanup();script.remove();reject(Error('Google Maps 載入逾時，請檢查網路後重新連線'));},20000);
+  function cleanup(){clearTimeout(timeout);window[callback]=()=>{};}
+  window[callback]=()=>{cleanup();resolve();};
+  script.async=true;script.src='https://maps.googleapis.com/maps/api/js?'+new URLSearchParams({key,v:'weekly',loading:'async',language:'zh-TW',callback});script.onerror=()=>{cleanup();script.remove();reject(Error('Google Maps 程式載入失敗，請檢查網路後重新連線'));};document.head.append(script);
  });
  const {Map}=await google.maps.importLibrary('maps');
  const {Place,AutocompleteSuggestion,AutocompleteSessionToken,SearchNearbyRankPreference}=await google.maps.importLibrary('places');
@@ -117,8 +128,9 @@ async function connectGoogleMaps(key){
   if(!routeLibrary)routeLibrary=google.maps.importLibrary('routes').catch(error=>{routeLibrary=null;throw error;});
   return routeLibrary;
  }
+ $('google-map').hidden=false;
  const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',scrollwheel:true,draggable:true,mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
- $('google-map').hidden=false;$('map').hidden=true;
+ $('google-map').hidden=false;$('map-recovery').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
  map.addListener('dragstart',()=>{userMovedMap=true;});
  const locations=new globalThis.Map(),routeCache=new globalThis.Map(),walkingRouteCache=new globalThis.Map();
@@ -231,10 +243,10 @@ async function connectGoogleMaps(key){
  });
  $('add-form').addEventListener('submit',()=>{searchVersion++;suggestions.replaceChildren();});
  $('key-state').textContent='金鑰已連線，搜尋時不需重新輸入。';mapStatus('');queueMapUpdate();
- }catch(error){mapStatus('Google Maps 載入失敗：'+apiError(error));}
+ }catch(error){const message='Google Maps 載入失敗：'+apiError(error);mapStatus(message);connectionState(message);$('map-recovery').hidden=false;}
 }
 render();
 activeApiKey=readApiKey();
 updateKeyStatus();
-if(activeApiKey)connectGoogleMaps(activeApiKey);
+if(activeApiKey)connectGoogleMaps(activeApiKey);else{connectionState('這個瀏覽器尚未儲存 API 金鑰，請在「管理員功能」設定一次。');}
 locateUser();
