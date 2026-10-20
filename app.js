@@ -181,10 +181,11 @@ async function initializeGoogleMaps(key){
      const control=document.querySelector(`[data-mode-index="${i}"]`);if(control)control.value=automaticMode;
     }
     const travelMode={walk:'WALKING',drive:'DRIVING',transit:'TRANSIT',bike:'BICYCLING'}[stops[i].mode];
-    // Keep requests in the future even after slow lookups or earlier route requests.
+    // Transit uses a chained time; driving omits departureTime so Google uses
+    // server-side now, independent of the device clock or network latency.
     const departureTime=new Date(Math.max(startTime+seconds*1000,Date.now()+60000));
     const cacheId=JSON.stringify([points[i].id,points[i+1].id,travelMode,Math.floor(departureTime.getTime()/300000)]);
-    const timing=travelMode==='DRIVING'?{departureTime,routingPreference:'TRAFFIC_AWARE'}:travelMode==='TRANSIT'?{departureTime}:{};
+    const timing=travelMode==='DRIVING'?{routingPreference:'TRAFFIC_AWARE'}:travelMode==='TRANSIT'?{departureTime}:{};
     try{
      let route=travelMode==='WALKING'&&automaticWalkingRoute?automaticWalkingRoute:routeCache.get(cacheId);
      if(!route){const {Route}=await getRouteLibrary();const result=await Route.computeRoutes({origin:new Place({id:points[i].id}),destination:new Place({id:points[i+1].id}),travelMode,...timing,fields:['path','distanceMeters','durationMillis','warnings']});route=result.routes?.[0];if(!route){const error=Error('無路線');if(travelMode==='TRANSIT')error.code='TRANSIT_NO_ROUTES';throw error;}routeCache.set(cacheId,route);}

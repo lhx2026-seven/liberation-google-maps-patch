@@ -20,7 +20,7 @@ const sdk=callback=>`(()=>{
  window.google={maps:{Marker,LatLngBounds:Bounds,ControlPosition:{TOP_RIGHT:1},importLibrary:async name=>{
  if(name==='maps')return {Map:MockMap};
  if(name==='places')return {Place,AutocompleteSessionToken:class{},SearchNearbyRankPreference:{DISTANCE:'DISTANCE'},AutocompleteSuggestion:{fetchAutocompleteSuggestions:async({input})=>({suggestions:[{placePrediction:{placeId:input,text:{toString:()=>input},toPlace:()=>new Place({id:input})}}]})}};
- return {Route:{computeRoutes:async request=>{mapCalls.routes.push(request);return {routes:[{distanceMeters:2000,durationMillis:600000,warnings:[],createPolylines:options=>{const line={options:options.polylineOptions,map:null,setMap(map){this.map=map;},setOptions(options){Object.assign(this.options,options);}};mapCalls.lines.push(line);return [line];}}]};}}};
+ return {Route:{computeRoutes:async request=>{mapCalls.routes.push(request);if(request.travelMode==='DRIVING'&&Object.hasOwn(request,'departureTime'))throw Error('Timestamp must be set to a future time.');return {routes:[{distanceMeters:2000,durationMillis:600000,warnings:[],createPolylines:options=>{const line={options:options.polylineOptions,map:null,setMap(map){this.map=map;},setOptions(options){Object.assign(this.options,options);}};mapCalls.lines.push(line);return [line];}}]};}}};
  }}};window[${JSON.stringify(callback)}]();})();`;
 async function pageWith({key=true,trip,failFirst=false}={}){
  const page=await browser.newPage({viewport:{width:390,height:780}});const errors=[];
@@ -43,6 +43,8 @@ test('saved-key boot draws route, preserves gestures, estimates, colors and day 
  const options=await page.evaluate(()=>mapCalls.options);
  assert.equal(options.gestureHandling,'greedy');assert.equal(options.scrollwheel,true);assert.equal(options.mapTypeId,'hybrid');
  assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'drive','2km must select driving');
+ const driving=await page.evaluate(()=>mapCalls.routes.find(r=>r.travelMode==='DRIVING'));
+ assert(driving,'driving request must execute');assert.equal(driving.routingPreference,'TRAFFIC_AWARE');assert.equal(Object.hasOwn(driving,'departureTime'),false,'Google must supply server-side now');
  assert(await page.evaluate(()=>mapCalls.lines.some(l=>l.map&&l.options.strokeColor==='#f57c00')),'route must actually be attached to map');
  await page.locator('.route-color summary').click();await page.locator('.color-palette button[aria-label="紫色"]').click();
  assert(await page.evaluate(()=>mapCalls.lines.some(l=>l.map&&l.options.strokeColor==='#9334e6')));
