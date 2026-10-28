@@ -12,10 +12,10 @@ before(async()=>{
 });
 after(async()=>{await browser?.close();server?.kill();});
 const sdk=(callback,transitBehavior)=>`(()=>{
- window.mapCalls={options:null,routes:[],markers:[],lines:[]};
- class MockMap {constructor(element,options){mapCalls.options=options;}addListener(){}fitBounds(){}panTo(){}setZoom(){}getZoom(){return 16;}}
+ window.mapCalls={options:null,routes:[],markers:[],lines:[],fits:[]};
+ class MockMap {constructor(element,options){mapCalls.options=options;}addListener(){}fitBounds(bounds){mapCalls.fits.push(bounds.count);}panTo(){}setZoom(){}getZoom(){return 16;}}
  class Marker {constructor(options){this.options=options;mapCalls.markers.push(this);}setMap(map){this.options.map=map;}addListener(){}}
- class Bounds {extend(){}isEmpty(){return false;}}
+ class Bounds {constructor(){this.count=0;}extend(){this.count++;}isEmpty(){return this.count===0;}}
  class Place {constructor({id}){this.id=id;this.location={lat:25,lng:121};this.displayName=id;}async fetchFields(){}static async searchByText({textQuery}){return {places:[new Place({id:textQuery})]};}}
  window.google={maps:{Marker,LatLngBounds:Bounds,ControlPosition:{TOP_RIGHT:1},importLibrary:async name=>{
  if(name==='maps')return {Map:MockMap};
@@ -88,4 +88,33 @@ test('transit permission errors never trigger fallback requests',async()=>{
  const {page,errors}=await pageWith({trip:transitTrip,transitBehavior:'denied'});
  await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('PERMISSION_DENIED'));
  assert.equal(await page.evaluate(()=>mapCalls.routes.length),1);assert.equal(await page.locator('.leg-estimate a').count(),0);assert.deepEqual(errors,[]);await page.close();
+});
+
+const multiDayTrip={name:'多日旅行',days:[
+ {stops:[{name:'A',placeId:'A',mode:'drive',modeAuto:false,color:'red'},{name:'B',placeId:'B',mode:'walk',modeAuto:false}]},
+ {stops:[{name:'C',placeId:'C',mode:'drive',modeAuto:false,color:'purple'},{name:'D',placeId:'D',mode:'walk',modeAuto:false}]},
+ {stops:[]}
+]};
+test('trip title shows every day on one map without cross-day connections and retains name editing',async()=>{
+ const {page,errors}=await pageWith({trip:multiDayTrip});
+ await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1);
+ await page.locator('#trip-overview').click();
+ await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('第 3 天：尚無停靠點'));
+ assert.equal(await page.locator('#day-title').textContent(),'全部日程');assert.equal(await page.locator('#day-actions').isVisible(),false);assert.equal(await page.locator('#add-form').isVisible(),false);
+ assert.deepEqual(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).map(l=>l.options.strokeColor)),['#d93025','#9334e6']);
+ assert.deepEqual(await page.evaluate(()=>mapCalls.markers.filter(m=>m.options.map).map(m=>m.options.label)),['1-1','1-2','2-1','2-2']);
+ assert.equal(await page.evaluate(()=>mapCalls.fits.at(-1)),4,'fit all days once');
+ const pairs=await page.evaluate(()=>mapCalls.routes.map(r=>[r.origin.id,r.destination.id]));assert.deepEqual(pairs,[['A','B'],['C','D']],'never connect the end of one day to the next');
+ await page.locator('#days button').nth(1).click();await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1&&mapCalls.lines.find(l=>l.map).options.strokeColor==='#9334e6');
+ assert.equal(await page.locator('#day-title').textContent(),'第 2 天');assert.equal(await page.locator('#day-actions').isVisible(),true);
+ await page.locator('#edit-trip-name').click();await page.locator('#trip-name').fill('四國小旅行');await page.locator('#trip-name').press('Enter');assert.equal(await page.locator('#trip-overview').textContent(),'四國小旅行');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('roam-trip-v1')).name),'四國小旅行');
+ await page.locator('#trip-overview').click();await page.locator('.overview-day').first().click();await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1&&mapCalls.lines.find(l=>l.map).options.strokeColor==='#d93025');
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);await page.close();
+});
+test('one missing transit day does not erase routes from other days in overview',async()=>{
+ const trip=structuredClone(multiDayTrip);trip.days[0].stops[0].mode='transit';
+ const {page,errors}=await pageWith({trip,transitBehavior:'empty'});
+ await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('缺 1 段'));
+ await page.locator('#trip-overview').click();await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('第 3 天：尚無停靠點'));
+ assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),1);assert.match(await page.locator('#map-status').textContent(),/第 1 天/);assert.match(await page.locator('#map-status').textContent(),/第 2 天/);assert.deepEqual(errors,[]);await page.close();
 });
