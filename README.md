@@ -53,3 +53,9 @@ npm run check
 ## 發布前回歸測試
 
 `npm ci`、`npx playwright install chromium`、`npm test`。本機若已有 Chromium，可設定 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 後執行 `npm test`。GitHub Actions 會先執行瀏覽器回歸測試，再發布 Pages。測試使用模擬 Google SDK 驗證地圖連線、真正在地圖上掛載路線、滾輪縮放設定、距離選交通方式、時間與顏色、天數操作、金鑰保留與載入失敗重連；不代表真實 Google API 或正式站已驗證。
+
+### 大眾運輸無結果的補查
+
+只有 TRANSIT 回傳空 routes 或 ZERO_RESULTS 時，會額外查詢一次：以同一地點座標為起訖點，不傳出發時間，改用 Google 伺服器的現在時間。補查成功會顯示「現在出發」；若不是第一段，也會提示此段未按前段抵達時間銜接。權限、帳務及配額錯誤不補查。補查可能增加一次 API 用量，不保證 API 資料涵蓋會因此增加。
+
+仍無結果時，保留大眾運輸模式，顯示直接帶起訖 Place ID 的 Google Maps 大眾運輸連結，不捏造路線或時間。總計標示缺少幾段時間，避免誤認為完整行程估時。

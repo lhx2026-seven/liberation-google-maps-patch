@@ -47,7 +47,15 @@ $('move-day-after').onclick=()=>moveCurrentDay(1);
 $('delete-day').onclick=()=>{if(trip.days.length>1&&confirm('確定刪除這一天及其所有停靠點？')){trip.days.splice(current,1);current=Math.min(current,trip.days.length-1);resetDestinationInput();save();render();}};
 $('add-form').onsubmit=e=>{e.preventDefault();const name=$('place').value.trim();if(!name)return;mapSelectionVersion++;trip.days[current].stops.push({name,...(selectedMapPlace?.name===name?{placeId:selectedMapPlace.placeId}:{}),mode:'walk',modeAuto:true});selectedMapPlace=null;$('place').value='';save();render();$('place').focus();};
 function showPlace(name){if(mapController){mapController.focus(name);return;}toast('地圖尚未連線，請按「重新連線」。');}
-function openLeg(index){const stops=trip.days[current].stops;const start=stops[index],end=stops[index+1];const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',bike:'bicycling'}[start.mode]});window.open('https://www.google.com/maps/dir/?'+params,'_blank','noopener,noreferrer');}
+function routeUrl(start,end){
+ const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',bike:'bicycling'}[start.mode]});
+ if(start.placeId)params.set('origin_place_id',start.placeId);if(end.placeId)params.set('destination_place_id',end.placeId);
+ return 'https://www.google.com/maps/dir/?'+params;
+}
+function openLeg(index){const stops=trip.days[current].stops;window.open(routeUrl(stops[index],stops[index+1]),'_blank','noopener,noreferrer');}
+function noTransitRoute(error){return error?.code==='TRANSIT_NO_ROUTES'||/ZERO_RESULTS/.test([error?.code,error?.message].join(' '));}
+function missingTransitRoute(){const error=Error('無路線');error.code='TRANSIT_NO_ROUTES';return error;}
+
 $('toggle-panel').onclick=()=>{const hidden=document.body.classList.toggle('panel-hidden');$('toggle-panel').textContent=hidden?'›':'‹';$('toggle-panel').setAttribute('aria-expanded',String(!hidden));$('toggle-panel').setAttribute('aria-label',hidden?'展開行程面板':'收合行程面板');};
 $('export').onclick=()=>{const content=[trip.name,...trip.days.flatMap((d,i)=>['',`Day ${i+1}`,...d.stops.map((s,j)=>`${j+1}. ${s.name}${j<d.stops.length-1?' → '+modes[s.mode]:''}`)])].join('\n');const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='roam-trip.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('已匯出行程');};
 
@@ -133,7 +141,7 @@ async function initializeGoogleMaps(key){
  $('google-map').hidden=false;$('map-recovery').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
  map.addListener('dragstart',()=>{userMovedMap=true;});
- const locations=new globalThis.Map(),routeCache=new globalThis.Map(),walkingRouteCache=new globalThis.Map();
+ const locations=new globalThis.Map(),routeCache=new globalThis.Map(),walkingRouteCache=new globalThis.Map(),transitNowCache=new Set();
  async function locate(stop){
   const id=stop.placeId||stop.name;if(locations.has(id))return locations.get(id);
   let place;
@@ -156,7 +164,7 @@ async function initializeGoogleMaps(key){
     try{points[i]=await locate(stops[i]);if(request!==version)return;bounds.extend(points[i].location);const marker=new google.maps.Marker({map,position:points[i].location,label:String(i+1),title:stops[i].name});marker.addListener('click',()=>fillFromMap(stops[i].name,points[i].id));markers.push(marker);}catch(error){if(request!==version)return;failures.push(`地點 ${i+1}（${stops[i].name}）：${apiError(error)}`);}
    }
    if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
-   let distance=0,seconds=0,routeCount=0;const warnings=new Set();const startTime=Date.now()+60000;let timelineKnown=true;
+   let distance=0,seconds=0,routeCount=0,knownTimeCount=0;const warnings=new Set();const startTime=Date.now()+60000;let timelineKnown=true;
    for(let i=0;i<stops.length-1;i++){
     if(request!==version)return;const estimate=document.querySelector(`[data-leg="${i}"]`);if(!points[i]||!points[i+1]){if(estimate)estimate.textContent='預估時間：地點查詢失敗';timelineKnown=false;continue;}
     let automaticWalkingRoute;
@@ -188,14 +196,46 @@ async function initializeGoogleMaps(key){
     const timing=travelMode==='DRIVING'?{routingPreference:'TRAFFIC_AWARE'}:travelMode==='TRANSIT'?{departureTime}:{};
     try{
      let route=travelMode==='WALKING'&&automaticWalkingRoute?automaticWalkingRoute:routeCache.get(cacheId);
-     if(!route){const {Route}=await getRouteLibrary();const result=await Route.computeRoutes({origin:new Place({id:points[i].id}),destination:new Place({id:points[i+1].id}),travelMode,...timing,fields:['path','distanceMeters','durationMillis','warnings']});route=result.routes?.[0];if(!route){const error=Error('無路線');if(travelMode==='TRANSIT')error.code='TRANSIT_NO_ROUTES';throw error;}routeCache.set(cacheId,route);}
+     if(!route){
+      const {Route}=await getRouteLibrary();
+      const fields=['path','distanceMeters','durationMillis','warnings'];
+      try{
+       const result=await Route.computeRoutes({origin:new Place({id:points[i].id}),destination:new Place({id:points[i+1].id}),travelMode,...timing,fields});
+       route=result.routes?.[0];if(!route)throw travelMode==='TRANSIT'?missingTransitRoute():Error('無路線');
+      }catch(error){
+       if(travelMode!=='TRANSIT'||!noTransitRoute(error))throw error;
+       if(request!==version)return;
+       // Only retry empty transit results, never permission, billing or quota errors.
+       // Use coordinates and Google's server-side now to avoid ID/time ambiguity.
+       const fallback=await Route.computeRoutes({origin:points[i].location,destination:points[i+1].location,travelMode:'TRANSIT',fields});
+       route=fallback.routes?.[0];if(!route)throw missingTransitRoute();
+       transitNowCache.add(cacheId);
+      }
+      routeCache.set(cacheId,route);
+     }
+
      if(request!==version)return;
-     const selectedStop=trip.days[current].stops[i]||stops[i];const segmentLines=route.createPolylines({polylineOptions:{strokeColor:routeColors[routeColor(selectedStop)].hex,strokeOpacity:.85,strokeWeight:5}});legLines.set(i,segmentLines);for(const line of segmentLines){line.setMap(map);lines.push(line);}for(const warning of route.warnings||[])warnings.add(warning);if(estimate)estimate.textContent='預估時間：約 '+formatTravelTime(route.durationMillis);if(!timelineKnown&&travelMode==='TRANSIT')warnings.add('部分前段時間未知，後續班次時間僅供參考。');distance+=route.distanceMeters||0;if(Number.isFinite(route.durationMillis))seconds+=route.durationMillis/1000;else{timelineKnown=false;warnings.add('部分路段未回傳時間，合計未包含該段。');}routeCount++;
-    }catch(error){if(request!==version)return;if(travelMode==='TRANSIT'&&/ZERO_RESULTS/.test([error?.code,error?.message].join(' '))){const missing=Error('無路線');missing.code='TRANSIT_NO_ROUTES';error=missing;}if(estimate)estimate.textContent=error?.code==='TRANSIT_NO_ROUTES'?'此時段未提供大眾運輸路線':'預估時間：查詢失敗';timelineKnown=false;failures.push(`路段 ${i+1}（${stops[i].name} → ${stops[i+1].name}，${modes[stops[i].mode]}）：${apiError(error)}`);}
+     const selectedStop=trip.days[current].stops[i]||stops[i];const segmentLines=route.createPolylines({polylineOptions:{strokeColor:routeColors[routeColor(selectedStop)].hex,strokeOpacity:.85,strokeWeight:5}});legLines.set(i,segmentLines);for(const line of segmentLines){line.setMap(map);lines.push(line);}for(const warning of route.warnings||[])warnings.add(warning);if(estimate)estimate.textContent='預估時間：約 '+formatTravelTime(route.durationMillis)+(transitNowCache.has(cacheId)?'（現在出發）':'');if(transitNowCache.has(cacheId)&&i>0)warnings.add(`路段 ${i+1} 改以現在出發查詢，未按前段抵達時間銜接。`);if(!timelineKnown&&travelMode==='TRANSIT')warnings.add('部分前段時間未知，後續班次時間僅供參考。');distance+=route.distanceMeters||0;if(Number.isFinite(route.durationMillis)){seconds+=route.durationMillis/1000;knownTimeCount++;}else{timelineKnown=false;warnings.add('部分路段未回傳時間，合計未包含該段。');}routeCount++;
+    }catch(error){
+     if(request!==version)return;timelineKnown=false;
+     if(travelMode==='TRANSIT'&&noTransitRoute(error)){
+      if(estimate){
+       const text=document.createElement('span');text.textContent='Google API 未提供此段轉乘資料。';
+       const link=document.createElement('a');link.href=routeUrl(stops[i],stops[i+1]);link.target='_blank';link.rel='noopener noreferrer';link.textContent='Google Maps 大眾運輸 ↗';
+       estimate.replaceChildren(text,link);
+      }
+      warnings.add(`路段 ${i+1} 大眾運輸未取得資料，請點該段 Google Maps 查詢。`);
+     }else{
+      if(estimate)estimate.textContent='預估時間：查詢失敗';
+      failures.push(`路段 ${i+1}（${stops[i].name} → ${stops[i+1].name}，${modes[stops[i].mode]}）：${apiError(error)}`);
+     }
+    }
    }
    if(request!==version)return;
    const info=routeCount?`${(distance/1000).toFixed(1)} 公里 · 交通約 ${formatTravelTime(seconds*1000)}（不含停留）`:'';
-   mapStatus([info?(failures.length?'已成功路段：':'')+info:'',...failures,...warnings].filter(Boolean).join('\n'));
+   const missingTimes=Math.max(0,stops.length-1-knownTimeCount);
+   if(missingTimes)warnings.add(`缺 ${missingTimes} 段交通時間，無法估算完整行程。`);
+   mapStatus([info?(missingTimes?'已取得路段：':'')+info:'',...failures,...warnings].filter(Boolean).join('\n'));
   }
  };
  // Use Google's current Places autocomplete; retain plain text entry as a fallback.
