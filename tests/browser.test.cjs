@@ -20,7 +20,7 @@ const sdk=(callback,transitBehavior)=>`(()=>{
  window.google={maps:{Marker,LatLngBounds:Bounds,ControlPosition:{TOP_RIGHT:1},importLibrary:async name=>{
  if(name==='maps')return {Map:MockMap};
  if(name==='places')return {Place,AutocompleteSessionToken:class{},SearchNearbyRankPreference:{DISTANCE:'DISTANCE'},AutocompleteSuggestion:{fetchAutocompleteSuggestions:async({input})=>({suggestions:[{placePrediction:{placeId:input,text:{toString:()=>input},toPlace:()=>new Place({id:input})}}]})}};
- return {Route:{computeRoutes:async request=>{mapCalls.routes.push(request);if(request.travelMode==='TRANSIT'){const behavior=${JSON.stringify(transitBehavior)};if(behavior==='denied')throw Object.assign(Error('Permission denied'),{code:'PERMISSION_DENIED'});if(behavior==='empty'||((behavior==='fallback'||behavior==='zero')&&request.origin.id)){if(behavior==='zero')throw Object.assign(Error('No routes'),{code:'ZERO_RESULTS'});return {routes:[]};}}if(request.travelMode==='DRIVING'&&Object.hasOwn(request,'departureTime'))throw Error('Timestamp must be set to a future time.');return {routes:[{distanceMeters:2000,durationMillis:600000,warnings:[],createPolylines:options=>{const line={options:options.polylineOptions,map:null,setMap(map){this.map=map;},setOptions(options){Object.assign(this.options,options);}};mapCalls.lines.push(line);return [line];}}]};}}};
+ return {Route:{computeRoutes:async request=>{mapCalls.routes.push(request);if(request.travelMode==='TWO_WHEELER'&&${JSON.stringify(transitBehavior)}==='motorcycle-unsupported')return {routes:[]};if(request.travelMode==='TRANSIT'){const behavior=${JSON.stringify(transitBehavior)};if(behavior==='denied')throw Object.assign(Error('Permission denied'),{code:'PERMISSION_DENIED'});if(behavior==='empty'||((behavior==='fallback'||behavior==='zero')&&request.origin.id)){if(behavior==='zero')throw Object.assign(Error('No routes'),{code:'ZERO_RESULTS'});return {routes:[]};}}if(request.travelMode==='DRIVING'&&Object.hasOwn(request,'departureTime'))throw Error('Timestamp must be set to a future time.');return {routes:[{distanceMeters:2000,durationMillis:600000,warnings:[],createPolylines:options=>{const line={options:options.polylineOptions,map:null,setMap(map){this.map=map;},setOptions(options){Object.assign(this.options,options);}};mapCalls.lines.push(line);return [line];}}]};}}};
  }}};window[${JSON.stringify(callback)}]();})();`;
 async function pageWith({key=true,trip,failFirst=false,transitBehavior}={}){
  const page=await browser.newPage({viewport:{width:390,height:780}});const errors=[];
@@ -117,4 +117,27 @@ test('one missing transit day does not erase routes from other days in overview'
  await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('缺 1 段'));
  await page.locator('#trip-overview').click();await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('第 3 天：尚無停靠點'));
  assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),1);assert.match(await page.locator('#map-status').textContent(),/第 1 天/);assert.match(await page.locator('#map-status').textContent(),/第 2 天/);assert.deepEqual(errors,[]);await page.close();
+});
+
+test('motorcycle appears in requested order, requests TWO_WHEELER and persists',async()=>{
+ const trip=structuredClone(multiDayTrip);trip.days=trip.days.slice(0,1);
+ const {page,errors}=await pageWith({trip});
+ const control=page.locator('[data-mode-index="0"]');
+ assert.deepEqual(await control.locator('option').allTextContents(),['步行','大眾運輸','開車','機車','自行車']);
+ await control.selectOption('motorcycle');await page.waitForFunction(()=>mapCalls.routes.some(r=>r.travelMode==='TWO_WHEELER'));
+ await page.waitForFunction(()=>document.querySelector('.leg-estimate').textContent.includes('10 分鐘'));
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('roam-trip-v1')).days[0].stops[0].mode),'motorcycle');
+ await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>mapCalls.routes.some(r=>r.travelMode==='TWO_WHEELER'));
+ assert.equal(await control.inputValue(),'motorcycle');assert.equal(await page.evaluate(()=>mapCalls.routes.some(r=>r.travelMode==='DRIVING')),false);
+ await page.evaluate(()=>{window.open=url=>{window.testMapsURL=url;};});await page.locator('[aria-label="在 Google Maps 開啟此路段"]').click();
+ const url=new URL(await page.evaluate(()=>window.testMapsURL));assert.equal(url.searchParams.get('travelmode'),'two-wheeler');
+ assert.deepEqual(errors,[]);await page.close();
+});
+test('unsupported motorcycle routes stay motorcycle and never silently use driving',async()=>{
+ const trip=structuredClone(multiDayTrip);trip.days=trip.days.slice(0,1);trip.days[0].stops[0].mode='motorcycle';
+ const {page,errors}=await pageWith({trip,transitBehavior:'motorcycle-unsupported'});
+ await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('無路線'));
+ assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'motorcycle');
+ assert.equal(await page.evaluate(()=>mapCalls.routes.some(r=>r.travelMode==='DRIVING')),false);
+ assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),0);assert.deepEqual(errors,[]);await page.close();
 });

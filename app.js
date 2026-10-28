@@ -2,12 +2,12 @@ const KEY='roam-trip-v1';
 const routeColors={red:{label:'紅',hex:'#d93025'},yellow:{label:'黃',hex:'#fbbc04'},blue:{label:'藍',hex:'#1a73e8'},green:{label:'綠',hex:'#188038'},orange:{label:'橘',hex:'#f57c00'},purple:{label:'紫',hex:'#9334e6'}};
 function routeColor(stop){return Object.hasOwn(routeColors,stop.color)?stop.color:'orange';}
 const defaults={name:'我的行程',days:[{stops:[]}]};
-let trip;try{trip=JSON.parse(localStorage.getItem(KEY));if(!trip||typeof trip.name!=='string'||!Array.isArray(trip.days)||!trip.days.length||!trip.days.every(d=>Array.isArray(d.stops)&&d.stops.every(s=>typeof s.name==='string'&&['walk','transit','drive','bike'].includes(s.mode))))trip=null;}catch{}trip=trip||structuredClone(defaults);
+let trip;try{trip=JSON.parse(localStorage.getItem(KEY));if(!trip||typeof trip.name!=='string'||!Array.isArray(trip.days)||!trip.days.length||!trip.days.every(d=>Array.isArray(d.stops)&&d.stops.every(s=>typeof s.name==='string'&&['walk','transit','drive','motorcycle','bike'].includes(s.mode))))trip=null;}catch{}trip=trip||structuredClone(defaults);
 // Legacy versions saved default walking without recording whether it was automatic.
 for(const day of trip.days)for(const stop of day.stops){if(stop.modeAuto===undefined&&stop.mode==='walk')stop.modeAuto=true;}
 let selectedMapPlace=null,mapSelectionVersion=0;
 let overview=false;
-let current=0;const $=id=>document.getElementById(id);const modes={walk:'步行',transit:'大眾運輸',drive:'開車',bike:'自行車'};let timer;
+let current=0;const $=id=>document.getElementById(id);const modes={walk:'步行',transit:'大眾運輸',drive:'開車',motorcycle:'機車',bike:'自行車'};let timer;
 function toast(message){$('toast').textContent=message;$('toast').style.display='block';clearTimeout(timer);timer=setTimeout(()=>$('toast').style.display='none',3500);}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(trip));$('save-status').textContent='已儲存';}catch{$('save-status').textContent='尚未儲存';toast('裝置無法儲存，請匯出行程以保留變更');}}
 function button(label,title,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);b.onclick=fn;return b;}
@@ -60,7 +60,7 @@ $('delete-day').onclick=()=>{if(trip.days.length>1&&confirm('確定刪除這一�
 $('add-form').onsubmit=e=>{e.preventDefault();const name=$('place').value.trim();if(!name)return;mapSelectionVersion++;trip.days[current].stops.push({name,...(selectedMapPlace?.name===name?{placeId:selectedMapPlace.placeId}:{}),mode:'walk',modeAuto:true});selectedMapPlace=null;$('place').value='';save();render();$('place').focus();};
 function showPlace(name){if(mapController){mapController.focus(name);return;}toast('地圖尚未連線，請按「重新連線」。');}
 function routeUrl(start,end){
- const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',bike:'bicycling'}[start.mode]});
+ const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',motorcycle:'two-wheeler',bike:'bicycling'}[start.mode]});
  if(start.placeId)params.set('origin_place_id',start.placeId);if(end.placeId)params.set('destination_place_id',end.placeId);
  return 'https://www.google.com/maps/dir/?'+params;
 }
@@ -203,7 +203,7 @@ async function initializeGoogleMaps(key){
      if(actual?.modeAuto===true&&actual.mode!==automaticMode){actual.mode=automaticMode;save();}
      const control=overview?null:document.querySelector(`[data-mode-index="${i}"]`);if(control)control.value=automaticMode;
     }
-    const travelMode={walk:'WALKING',drive:'DRIVING',transit:'TRANSIT',bike:'BICYCLING'}[stops[i].mode];
+    const travelMode={walk:'WALKING',drive:'DRIVING',transit:'TRANSIT',motorcycle:'TWO_WHEELER',bike:'BICYCLING'}[stops[i].mode];
     // Transit uses a chained time; driving omits departureTime so Google uses
     // server-side now, independent of the device clock or network latency.
     const departureTime=new Date(Math.max(startTime+seconds*1000,Date.now()+60000));
