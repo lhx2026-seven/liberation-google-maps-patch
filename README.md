@@ -1,3 +1,5 @@
+[iPhone／Android 加入主畫面教學](INSTALL.md)
+
 # 解放的Google Maps
 
 首次使用只建立空白第 1 天；既有瀏覽器行程會保留。頁面會請求定位，允許後將空白地圖移至目前位置；拒絕或定位失敗仍可搜尋。定位僅用於本次地圖視角，不寫入行程儲存資料。
@@ -67,3 +69,11 @@ npm run check
 ## 機車
 
 交通方式順序為步行、大眾運輸、開車、機車、自行車。機車使用 Routes API 的 TWO_WHEELER，外部 Google Maps 連結使用 two-wheeler。支援範圍依 Google 與地區而異；查詢失敗時保留機車選擇，不改用汽車估時或畫線。手動機車選擇會儲存，且不受 1 公里預設規則覆寫。
+
+## PWA
+
+用 Safari 開啟 GitHub Pages 後，分享 → 加入主畫面，即可以獨立視窗使用。不能從 iOS「檔案」安裝下載的網頁或 ZIP。安裝說明在 [INSTALL.md](INSTALL.md)。
+
+`npm run build` 產生 `_site/`，包含 manifest、iOS 與 Android 圖示、介面程式與 service worker；GitHub Actions 測試後發布此資料夾。建置會根據內容產生檔案版本及快取版本，網路優先取得介面更新。快取只限本站介面，不包含 Google 圖資、API 回應或金鑰。離線可讀取本機已儲存行程，地圖、搜尋、路線仍需網路；不是離線導航 App。
+
+本機驗證建置版可用 `SERVE_BUILD=1 BASE_PATH=/liberation-google-maps-patch npm start`，以相同子路徑測試安裝與離線。iOS 主畫面儲存空間不保證沿用 Safari；安裝前保留原瀏覽器行程並匯出備份，必要時在新 App 設定一次金鑰。實機 iOS 安裝仍需前台確認。
