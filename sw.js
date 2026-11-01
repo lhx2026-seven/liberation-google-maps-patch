@@ -1,7 +1,7 @@
 // Only the app shell is cached. Never cache Google Maps, API calls or keys.
 const PREFIX = 'liberated-maps-shell:' + new URL(self.registration.scope).pathname + ':';
 const CACHE = PREFIX + '__BUILD_ID__';
-const ASSETS = ['./', './index.html', './app.js', './style.css', './pwa.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
+const ASSETS = ['./', './index.html', './app.js', './style.css', './pwa.js', './boundaries.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 const allowed = new Set(ASSETS.map(asset => new URL(asset, self.registration.scope).pathname));
 self.addEventListener('install', event => {
  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));

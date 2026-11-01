@@ -15,9 +15,10 @@ const sdk=(callback,transitBehavior)=>`(()=>{
  window.mapCalls={options:null,routes:[],markers:[],lines:[],fits:[]};
  class MockMap {constructor(element,options){mapCalls.options=options;}addListener(){}fitBounds(bounds){mapCalls.fits.push(bounds.count);}panTo(){}setZoom(){}getZoom(){return 16;}}
  class Marker {constructor(options){this.options=options;mapCalls.markers.push(this);}setMap(map){this.options.map=map;}addListener(){}}
+ class Data {constructor(){}forEach(){}remove(){}addGeoJson(){}}
  class Bounds {constructor(){this.count=0;}extend(){this.count++;}isEmpty(){return this.count===0;}}
- class Place {constructor({id}){this.id=id;this.location={lat:25,lng:121};this.displayName=id;}async fetchFields(){}static async searchByText({textQuery}){return {places:[new Place({id:textQuery})]};}}
- window.google={maps:{Marker,LatLngBounds:Bounds,ControlPosition:{TOP_RIGHT:1},importLibrary:async name=>{
+ class Place {constructor({id}){this.id=id;this.location={lat:25,lng:121};this.displayName=id;this.types=id==='行政區測試'?['administrative_area_level_3']:['store'];this.addressComponents=[{types:['country'],shortText:'JP',longText:'日本'}];}async fetchFields(){}static async searchByText({textQuery}){return {places:[new Place({id:textQuery})]};}}
+ window.google={maps:{Data,Marker,LatLngBounds:Bounds,ControlPosition:{TOP_RIGHT:1},importLibrary:async name=>{
  if(name==='maps')return {Map:MockMap};
  if(name==='places')return {Place,AutocompleteSessionToken:class{},SearchNearbyRankPreference:{DISTANCE:'DISTANCE'},AutocompleteSuggestion:{fetchAutocompleteSuggestions:async({input})=>({suggestions:[{placePrediction:{placeId:input,text:{toString:()=>input},toPlace:()=>new Place({id:input})}}]})}};
  return {Route:{computeRoutes:async request=>{mapCalls.routes.push(request);if(request.travelMode==='TWO_WHEELER'&&${JSON.stringify(transitBehavior)}==='motorcycle-unsupported')return {routes:[]};if(request.travelMode==='TRANSIT'){const behavior=${JSON.stringify(transitBehavior)};if(behavior==='denied')throw Object.assign(Error('Permission denied'),{code:'PERMISSION_DENIED'});if(behavior==='empty'||((behavior==='fallback'||behavior==='zero')&&request.origin.id)){if(behavior==='zero')throw Object.assign(Error('No routes'),{code:'ZERO_RESULTS'});return {routes:[]};}}if(request.travelMode==='DRIVING'&&Object.hasOwn(request,'departureTime'))throw Error('Timestamp must be set to a future time.');return {routes:[{distanceMeters:2000,durationMillis:600000,warnings:[],createPolylines:options=>{const line={options:options.polylineOptions,map:null,setMap(map){this.map=map;},setOptions(options){Object.assign(this.options,options);}};mapCalls.lines.push(line);return [line];}}]};}}};
@@ -140,4 +141,10 @@ test('unsupported motorcycle routes stay motorcycle and never silently use drivi
  assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'motorcycle');
  assert.equal(await page.evaluate(()=>mapCalls.routes.some(r=>r.travelMode==='DRIVING')),false);
  assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),0);assert.deepEqual(errors,[]);await page.close();
+});
+
+test('selecting an administrative search suggestion offers an area without automatically querying the boundary provider',async()=>{
+ const {page,errors}=await pageWith({trip:itinerary});let boundaryRequests=0;
+ await page.route('https://nominatim.openstreetmap.org/search?*',route=>{boundaryRequests++;return route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify([{osm_type:'relation',osm_id:999,name:'行政區測試',display_name:'行政區測試,日本',category:'boundary',type:'administrative',geojson:{type:'Polygon',coordinates:[[[120,24],[122,24],[122,26],[120,26],[120,24]]]}}])});});
+ await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));await page.locator('#place').fill('行政區測試');await page.locator('#suggestions button').click();await page.locator('#add-boundary').waitFor({state:'visible'});assert.equal(boundaryRequests,0);await page.locator('#add-boundary').click();await page.locator('.boundary-row').waitFor();assert.equal(boundaryRequests,1);assert.equal(await page.locator('.stop').count(),3);assert.deepEqual(errors,[]);await page.close();
 });

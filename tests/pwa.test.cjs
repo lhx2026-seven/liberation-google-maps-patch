@@ -68,10 +68,10 @@ test('offline notice responds when the browser reports connectivity after page s
 });
 test('build embeds matching asset versions and changes cache identity when source changes',()=>{
  const worker=fs.readFileSync(path.join(root,'_site/sw.js'),'utf8');assert(!worker.includes('__BUILD_ID__'));assert.match(worker,/PREFIX \+ '[a-f0-9]{16}'/);
- const html=fs.readFileSync(path.join(root,'_site/index.html'),'utf8');for(const asset of ['app.js','style.css','pwa.js']){const url=html.match(new RegExp('\\./'+asset.replaceAll('.','\\.')+'\\?v=[a-f0-9]{12}'))?.[0];assert(url);assert(worker.includes(url));}
+ const html=fs.readFileSync(path.join(root,'_site/index.html'),'utf8');for(const asset of ['app.js','style.css','pwa.js','boundaries.js']){const url=html.match(new RegExp('\\./'+asset.replaceAll('.','\\.')+'\\?v=[a-f0-9]{12}'))?.[0];assert(url);assert(worker.includes(url));}
  const work=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'maps-pwa-build-'));
  try{
-  fs.mkdirSync(path.join(work,'scripts'));for(const file of ['index.html','app.js','style.css','pwa.js','manifest.webmanifest','sw.js'])fs.copyFileSync(path.join(root,file),path.join(work,file));
+  fs.mkdirSync(path.join(work,'scripts'));for(const file of ['index.html','app.js','style.css','pwa.js','boundaries.js','boundary-config.json','manifest.webmanifest','sw.js'])fs.copyFileSync(path.join(root,file),path.join(work,file));
   fs.cpSync(path.join(root,'icons'),path.join(work,'icons'),{recursive:true});fs.copyFileSync(path.join(root,'scripts/build.cjs'),path.join(work,'scripts/build.cjs'));
   fs.appendFileSync(path.join(work,'pwa.js'),'\n// update regression fixture\n');execFileSync(process.execPath,[path.join(work,'scripts/build.cjs')]);
   const next=fs.readFileSync(path.join(work,'_site/sw.js'),'utf8');assert.notEqual(next.match(/PREFIX \+ '([a-f0-9]+)'/)[1],worker.match(/PREFIX \+ '([a-f0-9]+)'/)[1]);

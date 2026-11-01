@@ -1,12 +1,12 @@
 const fs=require('node:fs');const path=require('node:path');const crypto=require('node:crypto');
 const root=path.join(__dirname,'..');const target=path.join(root,'_site');
 fs.rmSync(target,{recursive:true,force:true});fs.mkdirSync(target,{recursive:true});
-const files=['index.html','app.js','style.css','pwa.js','manifest.webmanifest','sw.js'];
+const files=['index.html','app.js','style.css','pwa.js','boundaries.js','boundary-config.json','manifest.webmanifest','sw.js'];
 for(const file of files)fs.copyFileSync(path.join(root,file),path.join(target,file));
 fs.cpSync(path.join(root,'icons'),path.join(target,'icons'),{recursive:true});
 const fingerprint=name=>crypto.createHash('sha256').update(fs.readFileSync(path.join(target,name))).digest('hex').slice(0,12);
 let html=fs.readFileSync(path.join(target,'index.html'),'utf8');
-const versioned=['app.js','style.css','pwa.js'];
+const versioned=['app.js','style.css','pwa.js','boundaries.js'];
 for(const file of versioned){const pattern=new RegExp('\\./'+file.replaceAll('.','\\.')+'(?:\\?v=[^"\\s]+)?','g');html=html.replace(pattern,'./'+file+'?v='+fingerprint(file));}
 fs.writeFileSync(path.join(target,'index.html'),html);
 const icons=['icons/icon-192.png','icons/icon-512.png','icons/icon-maskable-512.png','icons/apple-touch-icon.png'];

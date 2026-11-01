@@ -150,6 +150,7 @@ async function initializeGoogleMaps(key){
  }
  $('google-map').hidden=false;
  const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',scrollwheel:true,draggable:true,mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
+ window.adminBoundaries?.attachMap(map);
  $('google-map').hidden=false;$('map-recovery').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
  map.addListener('dragstart',()=>{userMovedMap=true;});
@@ -262,7 +263,7 @@ async function initializeGoogleMaps(key){
  const suggestions=document.createElement('div');suggestions.id='suggestions';$('add-form').append(suggestions);
  let session=new AutocompleteSessionToken(),searchTimer,searchVersion=0;
  $('place').addEventListener('input',()=>{selectedMapPlace=null;mapSelectionVersion++;const n=++searchVersion;clearTimeout(searchTimer);suggestions.replaceChildren();const input=$('place').value.trim();if(!input)return;searchTimer=setTimeout(async()=>{
-  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];const selectionRequest=++mapSelectionVersion;try{const place=prediction.toPlace();await place.fetchFields({fields:['location']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch(error){toast('地點資料：'+apiError(error));}if(selectionRequest!==mapSelectionVersion||!trip.days.includes(chosenDay))return;chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk',modeAuto:true});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
+  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];const selectionRequest=++mapSelectionVersion;let boundaryPlace;try{const place=prediction.toPlace();boundaryPlace=place;await place.fetchFields({fields:['location','displayName','types','addressComponents','viewport']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch(error){toast('地點資料：'+apiError(error));}if(selectionRequest!==mapSelectionVersion||!trip.days.includes(chosenDay))return;window.adminBoundaries?.setCandidate(boundaryPlace);chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk',modeAuto:true});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
   catch(error){if(n===searchVersion)mapStatus('地點建議：'+apiError(error));}
  },300);});
  function fillFromMap(name,placeId){
@@ -279,7 +280,7 @@ async function initializeGoogleMaps(key){
   try{
    let place;
    if(event.placeId){
-    place=new Place({id:event.placeId});await place.fetchFields({fields:['displayName','formattedAddress','location']});
+    place=new Place({id:event.placeId});await place.fetchFields({fields:['displayName','formattedAddress','location','types','addressComponents','viewport']});
    }else{
     // Some station icons emit coordinates without a place ID. Only look for
     // stations in a small radius at street-level zoom, not arbitrary landmarks.
@@ -298,6 +299,7 @@ async function initializeGoogleMaps(key){
     place=stations[0];
    }
    if(request!==mapSelectionVersion||$('place').value!==inputBefore)return;
+   window.adminBoundaries?.setCandidate(place);
    const name=place.displayName||place.formattedAddress;if(!name){toast('無法取得此地點名稱');return;}
    if(place.location)locations.set(place.id,{id:place.id,location:place.location});
    fillFromMap(name,place.id);
