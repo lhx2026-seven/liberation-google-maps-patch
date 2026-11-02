@@ -1,8 +1,9 @@
 const KEY='roam-trip-v1';
 const routeColors={red:{label:'紅',hex:'#d93025'},yellow:{label:'黃',hex:'#fbbc04'},blue:{label:'藍',hex:'#1a73e8'},green:{label:'綠',hex:'#188038'},orange:{label:'橘',hex:'#f57c00'},purple:{label:'紫',hex:'#9334e6'}};
 function routeColor(stop){return Object.hasOwn(routeColors,stop.color)?stop.color:'orange';}
-const defaults={name:'我的行程',days:[{stops:[]}]};
+const defaults={name:'行程規劃',days:[{stops:[]}]};
 let trip;try{trip=JSON.parse(localStorage.getItem(KEY));if(!trip||typeof trip.name!=='string'||!Array.isArray(trip.days)||!trip.days.length||!trip.days.every(d=>Array.isArray(d.stops)&&d.stops.every(s=>typeof s.name==='string'&&['walk','transit','drive','motorcycle','bike'].includes(s.mode))))trip=null;}catch{}trip=trip||structuredClone(defaults);
+if(trip.name==='我的行程'){trip.name='行程規劃';try{localStorage.setItem(KEY,JSON.stringify(trip));}catch{}}
 // Legacy versions saved default walking without recording whether it was automatic.
 for(const day of trip.days)for(const stop of day.stops){if(stop.modeAuto===undefined&&stop.mode==='walk')stop.modeAuto=true;}
 let selectedMapPlace=null,mapSelectionVersion=0;
@@ -28,7 +29,7 @@ function render(){
  queueMapUpdate();
 
 }
-function finishTripName(){trip.name=$('trip-name').value.trim()||'我的行程';$('trip-name').hidden=true;$('trip-overview').hidden=false;save();render();}
+function finishTripName(){trip.name=$('trip-name').value.trim()||'行程規劃';$('trip-name').hidden=true;$('trip-overview').hidden=false;save();render();}
 $('trip-overview').onclick=()=>{overview=true;resetDestinationInput();render();};
 $('edit-trip-name').onclick=()=>{$('trip-overview').hidden=true;$('trip-name').hidden=false;$('trip-name').focus();$('trip-name').select();};
 $('trip-name').onblur=finishTripName;
