@@ -57,7 +57,7 @@ test('saved-key boot draws route, preserves gestures, estimates, colors and day 
 test('without a key explains disconnected state instead of showing Ctrl-only embed',async()=>{
  const {page,errors}=await pageWith({key:false});
  assert.equal(await page.locator('iframe').count(),0);assert.match(await page.locator('#map-recovery-message').textContent(),/尚未儲存 API/);
- await page.locator('#reconnect-map').click();await page.locator('#api-key').fill('fake-test-key');await page.locator('#key-form button[type=submit]').click();
+ await page.locator('#settings').click();await page.locator('#api-key').fill('fake-test-key');await page.locator('#key-form button[type=submit]').click();
  await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));
  await page.locator('#place').fill('新地點');await page.locator('#suggestions button').click();assert.equal(await page.locator('.stop input').inputValue(),'新地點');
  assert.equal(await page.locator('#key-dialog').evaluate(e=>e.open),false);assert.deepEqual(errors,[]);await page.close();
@@ -66,7 +66,7 @@ test('failed SDK load can reconnect with saved key without re-entry',async()=>{
  const {page,errors,requests}=await pageWith({trip:itinerary,failFirst:true});
  await page.waitForFunction(()=>document.querySelector('#map-recovery-message').textContent.includes('載入失敗'));
  assert.equal(await page.locator('#key-dialog').evaluate(e=>e.open),false);
- await page.locator('#reconnect-map').click();await page.waitForFunction(()=>document.querySelector('.leg-estimate')?.textContent.includes('10 分鐘'));
+ await page.locator('#toggle-panel').click();await page.locator('#boundary-tool-toggle').click();await page.locator('#reconnect-map').click();await page.waitForFunction(()=>document.querySelector('.leg-estimate')?.textContent.includes('10 分鐘'));
  assert.equal(requests(),2);assert.equal(await page.evaluate(()=>localStorage.getItem('trip-maps-api-key')),'fake-test-key');
  assert.equal(await page.locator('#map-recovery').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
 });
@@ -150,7 +150,7 @@ test('administrative boundaries have their own mobile search and draw without ch
  await page.waitForFunction(()=>mapCalls.lines.some(line=>line.map));
  const before=await page.evaluate(()=>localStorage.getItem('roam-trip-v1'));
  assert.equal(await page.locator('.sidebar .boundaries').count(),0,'area tool must not be inside itinerary');
- await page.locator('#trip-overview').click();await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('#boundary-search').isVisible(),true);assert.equal(await page.locator('#day-title').textContent(),'全部日程','opening areas must not leave trip overview');
+ await page.locator('#trip-overview').click();assert.equal(await page.locator('#boundary-search').isVisible(),true);assert.equal(await page.locator('#day-title').textContent(),'全部日程','opening areas must not leave trip overview');
  await page.locator('#boundary-search').fill('行政區測試');await page.locator('#search-boundary').click();await page.locator('.boundary-row').waitFor();assert.equal(boundaryRequests,1,'submit must actually query the boundary service');assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.evaluate(()=>localStorage.getItem('roam-trip-v1')),before);
  assert.equal(await page.locator('#boundary-search').evaluate(e=>e===document.activeElement),false);
  await page.locator('#boundary-search').fill('普通商家');await page.locator('#search-boundary').click();await page.waitForFunction(()=>document.querySelector('#boundary-status').textContent.includes('沒有回傳可識別的行政區'));assert.equal(await page.locator('.boundary-row').count(),1);assert.equal(boundaryRequests,1,'business should never reach the boundary provider');
@@ -160,22 +160,22 @@ test('administrative boundaries have their own mobile search and draw without ch
 test('map picking also performs the boundary lookup rather than only showing instructions',async()=>{
  const {page,errors}=await pageWith({trip:itinerary});
  await page.route('https://nominatim.openstreetmap.org/search?*',route=>route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify([{osm_type:'relation',osm_id:998,name:'行政區測試',category:'boundary',type:'administrative',geojson:{type:'Polygon',coordinates:[[[120,24],[122,24],[122,26],[120,26],[120,24]]]}}])}));
- await page.waitForFunction(()=>Boolean(mapCalls.listeners.click));await page.locator('#boundary-tool-toggle').click();await page.locator('#select-boundary').click();
+ await page.waitForFunction(()=>Boolean(mapCalls.listeners.click));await page.locator('#select-boundary').click();
  await page.evaluate(()=>mapCalls.listeners.click({placeId:'行政區測試',stop(){}}));await page.locator('.boundary-row').waitFor();assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.locator('.stop').count(),2);assert.deepEqual(errors,[]);await page.close();
 });
 
 test('desktop drawers align at the top and independently support all four open states',async()=>{
  const {page,errors}=await pageWith({trip:itinerary});await page.setViewportSize({width:1440,height:1000});
- assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),false);
- await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),true);assert.equal(await page.locator('#boundary-tool-toggle').textContent(),'‹');
+ assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),true);
+ assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),true);assert.equal(await page.locator('#boundary-tool-toggle').textContent(),'‹');
  const trip=await page.locator('.sidebar').boundingBox(),area=await page.locator('#boundary-panel').boundingBox();assert(Math.abs(trip.y-area.y)<2);assert(trip.x+trip.width<area.x,'drawers must not overlap');
  const tripFont=await page.locator('#trip-overview').evaluate(e=>getComputedStyle(e).fontSize),areaFont=await page.locator('.boundary-heading strong').evaluate(e=>getComputedStyle(e).fontSize);assert.equal(areaFont,tripFont);assert.equal(await page.locator('.boundary-heading strong').textContent(),'行政區邊界標示');
  await page.locator('#toggle-panel').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),true);
- await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),false);
+ await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),false);assert.equal(await page.locator('#toggle-panel').textContent(),'行程規劃 ›');{const first=await page.locator('#toggle-panel').boundingBox(),second=await page.locator('#boundary-tool-toggle').boundingBox();assert.equal(first.width,second.width);assert.equal(first.height,second.height);assert(first.x+first.width<=second.x);}
  await page.locator('#toggle-panel').click();assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),false);
  await page.setViewportSize({width:390,height:780});await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#boundary-panel').isVisible(),true);
  const mobileTrip=await page.locator('.sidebar').boundingBox(),mobileArea=await page.locator('#boundary-panel').boundingBox();assert(mobileTrip.y+mobileTrip.height<mobileArea.y,'mobile panels must stack without covering each other');
  assert.equal(await page.locator('.boundary-heading strong').evaluate(e=>getComputedStyle(e).fontSize),await page.locator('#trip-overview').evaluate(e=>getComputedStyle(e).fontSize));
- await page.locator('#toggle-panel').click();assert.equal(await page.locator('#boundary-panel').isVisible(),true);await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),false);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.locator('#toggle-panel').click();assert.equal(await page.locator('#boundary-panel').isVisible(),true);await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),false);assert.equal(await page.locator('#toggle-panel').textContent(),'行程規劃 ›');{const first=await page.locator('#toggle-panel').boundingBox(),second=await page.locator('#boundary-tool-toggle').boundingBox();assert.equal(first.width,second.width);assert.equal(first.height,second.height);assert(first.x+first.width<=second.x);}assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.deepEqual(errors,[]);await page.close();
 });

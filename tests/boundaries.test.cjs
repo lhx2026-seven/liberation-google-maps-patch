@@ -16,7 +16,7 @@ test('businesses do not trigger boundary requests; Taiwan villages and multiple 
  await page.locator('#add-boundary').click();await page.waitForFunction(()=>document.querySelector('#boundary-status').textContent.includes('已加入'));assert.equal(await page.locator('.boundary-row').count(),2,'do not add same relation twice');
  await page.locator('#boundary-tool-toggle').click();await page.locator('#add-day').click();assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),2,'route/day redraw cannot clear boundaries');
  await page.reload({waitUntil:'domcontentloaded'});await attach(page);assert.equal(await page.locator('.boundary-row').count(),2);assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),2);
- await page.locator('#boundary-tool-toggle').click();await page.locator('[aria-label="移除範圍 福丘里"]').click();assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),1);await page.locator('#clear-boundaries').click();assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),0);assert.deepEqual(errors,[]);await page.close();
+ await page.locator('[aria-label="移除範圍 福丘里"]').click();assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),1);await page.locator('#clear-boundaries').click();assert.equal(await page.evaluate(()=>testBoundaryLayer.features.length),0);assert.deepEqual(errors,[]);await page.close();
 });
 test('reject wrong names, distant polygons and non-administrative shapes instead of drawing bounding boxes',async()=>{
  const {page,errors}=await setup();await page.route('https://nominatim.openstreetmap.org/search?*',route=>{
@@ -32,6 +32,6 @@ test('independent search can draw a Taiwan city in a 390px viewport',async()=>{
  const {page,errors}=await setup();let providerCalls=0;
  await page.route('https://nominatim.openstreetmap.org/search?*',route=>{providerCalls++;return route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify([result('臺北市',401,4)])});});
  await page.evaluate(()=>adminBoundaries.attachSearch(async name=>[{displayName:name,types:['administrative_area_level_1'],location:{lat:25.5,lng:121.5},addressComponents:[{types:['country'],shortText:'TW',longText:'台灣'}]}]));
- await page.locator('#boundary-tool-toggle').click();await page.locator('#boundary-search').fill('台北市');await page.locator('#search-boundary').click();await page.waitForFunction(()=>testBoundaryLayer.features.length===1);
+ await page.locator('#boundary-search').fill('台北市');await page.locator('#search-boundary').click();await page.waitForFunction(()=>testBoundaryLayer.features.length===1);
  assert.equal(providerCalls,1);assert.equal(await page.evaluate(()=>testBoundaryLayer.features[0].properties.name),'臺北市');assert.equal(await page.locator('.sidebar .boundaries').count(),0);assert.equal(await page.locator('.stop').count(),0);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);await page.close();
 });

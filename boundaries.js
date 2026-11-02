@@ -13,7 +13,7 @@
  function message(text){status.textContent=text;}
  function openPanel(){document.getElementById('boundary-panel').hidden=false;document.body.classList.remove('boundary-panel-hidden');const toggle=document.getElementById('boundary-tool-toggle');toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-label','收合行政區邊界標示');toggle.textContent='‹';}
  function closePanel(){epoch++;setSelecting(false);document.getElementById('boundary-panel').hidden=true;document.body.classList.add('boundary-panel-hidden');const toggle=document.getElementById('boundary-tool-toggle');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','展開行政區邊界標示');toggle.textContent='行政區邊界標示 ›';}
- document.body.classList.add('boundary-panel-hidden');document.getElementById('boundary-tool-toggle').setAttribute('aria-label','展開行政區邊界標示');
+ openPanel();
  document.getElementById('boundary-tool-toggle').onclick=()=>{if(document.getElementById('boundary-panel').hidden)openPanel();else closePanel();};
  function reveal(){openPanel();selection.scrollIntoView({block:'nearest'});}
  function setSelecting(value){selecting=value;document.getElementById('cancel-boundary-selection').hidden=!value;}
