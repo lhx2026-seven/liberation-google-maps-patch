@@ -148,3 +148,14 @@ test('selecting an administrative search suggestion offers an area without autom
  await page.route('https://nominatim.openstreetmap.org/search?*',route=>{boundaryRequests++;return route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify([{osm_type:'relation',osm_id:999,name:'行政區測試',display_name:'行政區測試,日本',category:'boundary',type:'administrative',geojson:{type:'Polygon',coordinates:[[[120,24],[122,24],[122,26],[120,26],[120,24]]]}}])});});
  await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));await page.locator('#place').fill('行政區測試');await page.locator('#suggestions button').click();await page.locator('#add-boundary').waitFor({state:'visible'});assert.equal(boundaryRequests,0);await page.locator('#add-boundary').click();await page.locator('.boundary-row').waitFor();assert.equal(boundaryRequests,1);assert.equal(await page.locator('.stop').count(),3);assert.deepEqual(errors,[]);await page.close();
 });
+
+test('mobile area selection has a visible entry, works from overview and does not add route stops',async()=>{
+ const {page,errors}=await pageWith({trip:itinerary});await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));
+ await page.locator('#trip-overview').click();assert.equal(await page.locator('#select-boundary').isVisible(),true);
+ await page.locator('#select-boundary').click();assert.equal(await page.locator('#add-form').isVisible(),true);assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),true);
+ const count=await page.locator('.stop').count();await page.locator('#place').fill('行政區測試');await page.locator('#suggestions button').click();
+ await page.locator('#add-boundary').waitFor({state:'visible'});assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.locator('.stop').count(),count,'choosing a boundary must not add an itinerary stop');
+ assert.equal(await page.locator('#place').evaluate(e=>e===document.activeElement),false,'dismiss the phone keyboard to expose the action');
+ await page.locator('#select-boundary').click();await page.locator('#place').fill('普通商家');await page.locator('#suggestions button').click();await page.waitForFunction(()=>document.querySelector('#boundary-status').textContent.includes('不是可識別的行政區'));assert.equal(await page.locator('.stop').count(),count);assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),true);
+ await page.locator('#cancel-boundary-selection').click();assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),false);assert.equal(await page.locator('#place').getAttribute('placeholder'),'新增目的地');assert.deepEqual(errors,[]);await page.close();
+});

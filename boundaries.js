@@ -6,11 +6,16 @@
  const selection=document.getElementById('boundary-selection');
  const list=document.getElementById('boundary-list');
  const choices=document.getElementById('boundary-choices');
- let candidate=null,map=null,layer=null,busy=false,epoch=0,configPromise;
+ let candidate=null,map=null,layer=null,busy=false,selecting=false,epoch=0,configPromise;
  const lookupCache=new Map();
  let features=[];
  try{const stored=JSON.parse(localStorage.getItem(KEY));if(Array.isArray(stored))features=stored.filter(validFeature);}catch{}
  function message(text){status.textContent=text;}
+ function reveal(){selection.scrollIntoView({block:'nearest'});}
+ function setSelecting(value){selecting=value;document.getElementById('cancel-boundary-selection').hidden=!value;document.getElementById('place').placeholder=value?'搜尋行政區，例如板橋區、福丘里':'新增目的地';}
+ document.getElementById('select-boundary').onclick=()=>{if(window.prepareBoundarySearch?.()===false){message('請先連線 Google 地圖，再選擇行政區。');return;}epoch++;candidate=null;choices.replaceChildren();setSelecting(true);message('輸入行政區名稱後，點選 Google 的搜尋建議。');render();const input=document.getElementById('place');input.value='';input.dispatchEvent(new Event('input'));input.scrollIntoView({block:'nearest'});input.focus();};
+ document.getElementById('cancel-boundary-selection').onclick=()=>{epoch++;setSelecting(false);message('');render();};
+
  function point(position){return {lat:typeof position?.lat==='function'?position.lat():position?.lat,lng:typeof position?.lng==='function'?position.lng():position?.lng};}
  function validGeometry(g){
   if(!g||!['Polygon','MultiPolygon'].includes(g.type)||!Array.isArray(g.coordinates)||!g.coordinates.length)return false;
@@ -69,7 +74,7 @@
   selection.hidden=!candidate;add.disabled=busy;list.replaceChildren();
   document.getElementById('boundary-name').textContent=candidate?.name||'';
   document.getElementById('clear-boundaries').hidden=!features.length;
-  document.getElementById('boundary-attribution').hidden=!features.length&&!choices.children.length;
+  document.getElementById('boundary-attribution').hidden=!features.length&&!choices.children.length&&!candidate&&!selecting;
   for(const feature of features){
    const row=document.createElement('div');row.className='boundary-row';
    const name=document.createElement('button');name.type='button';name.textContent=feature.properties.name;name.title=feature.properties.label;name.onclick=()=>focus(feature);
@@ -125,19 +130,23 @@
    if(matches.length===1){accept(matches[0]);return;}
    message('有多個相符邊界，請選擇：');choices.replaceChildren();
    for(const feature of matches){const button=document.createElement('button');button.type='button';button.textContent=`${feature.properties.label}${feature.properties.adminLevel?`（OSM 層級 ${feature.properties.adminLevel}）`:''}`;button.onclick=()=>accept(feature);choices.append(button);}
-  }catch(error){if(request===epoch)message(error.name==='AbortError'?'邊界服務回應逾時，請稍後再試':error.message||'邊界查詢失敗');}
+  }catch(error){if(request===epoch)message(error.name==='AbortError'?'邊界服務回應逾時，請稍後再試':error instanceof TypeError?'邊界服務連線失敗，可能是網路或服務限制；行程功能仍可使用。':error.message||'邊界查詢失敗');}
   finally{busy=false;render();}
  };
  document.getElementById('clear-boundaries').onclick=()=>{epoch++;features=[];choices.replaceChildren();message('');save();updateLayer();render();};
  window.adminBoundaries={
+  isSelecting(){return selecting;},
+  reveal,
   attachMap(value){map=value;try{layer=new google.maps.Data({map,style:{strokeColor:'#d93025',strokeWeight:2,strokeOpacity:1,fillColor:'#d93025',fillOpacity:0.04,clickable:false}});updateLayer();}catch{message('行政區圖層暫時無法啟用，行程地圖仍可使用。');}},
   setCandidate(place){
    epoch++;choices.replaceChildren();message('');
-   if(!eligible(place)){candidate=null;render();return;}
+   if(!eligible(place)){candidate=null;if(selecting)message('這個結果不是可識別的行政區；請改選城市、鄉鎮或村里。');render();return false;}
    const country=place.addressComponents?.find(c=>c.types?.includes('country'));
    const location=point(place.location);
    candidate=Number.isFinite(location.lat)&&Number.isFinite(location.lng)?{name:place.displayName,location,country:country?.shortText,countryName:country?.longText,viewport:place.viewport?.toJSON?.()}:null;
-   render();
+   if(selecting)setSelecting(false);
+   if(candidate)document.getElementById('place').blur();
+   render();if(candidate)reveal();return Boolean(candidate);
   }
  };
  render();
