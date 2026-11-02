@@ -29,7 +29,6 @@ function render(){
 
 }
 function finishTripName(){trip.name=$('trip-name').value.trim()||'我的行程';$('trip-name').hidden=true;$('trip-overview').hidden=false;save();render();}
-window.prepareBoundarySearch=()=>{if(!mapController){toast('請先連線 Google 地圖，再選擇行政區。');return false;}if(overview){overview=false;render();}return true;};
 $('trip-overview').onclick=()=>{overview=true;resetDestinationInput();render();};
 $('edit-trip-name').onclick=()=>{$('trip-overview').hidden=true;$('trip-name').hidden=false;$('trip-name').focus();$('trip-name').select();};
 $('trip-name').onblur=finishTripName;
@@ -58,7 +57,7 @@ function moveCurrentDay(offset){
 $('move-day-before').onclick=()=>moveCurrentDay(-1);
 $('move-day-after').onclick=()=>moveCurrentDay(1);
 $('delete-day').onclick=()=>{if(trip.days.length>1&&confirm('確定刪除這一天及其所有停靠點？')){trip.days.splice(current,1);current=Math.min(current,trip.days.length-1);resetDestinationInput();save();render();}};
-$('add-form').onsubmit=e=>{e.preventDefault();if(window.adminBoundaries?.isSelecting()){toast('請點選 Google 搜尋建議中的行政區名稱。');return;}const name=$('place').value.trim();if(!name)return;mapSelectionVersion++;trip.days[current].stops.push({name,...(selectedMapPlace?.name===name?{placeId:selectedMapPlace.placeId}:{}),mode:'walk',modeAuto:true});selectedMapPlace=null;$('place').value='';save();render();$('place').focus();};
+$('add-form').onsubmit=e=>{e.preventDefault();const name=$('place').value.trim();if(!name)return;mapSelectionVersion++;trip.days[current].stops.push({name,...(selectedMapPlace?.name===name?{placeId:selectedMapPlace.placeId}:{}),mode:'walk',modeAuto:true});selectedMapPlace=null;$('place').value='';save();render();$('place').focus();};
 function showPlace(name){if(mapController){mapController.focus(name);return;}toast('地圖尚未連線，請按「重新連線」。');}
 function routeUrl(start,end){
  const params=new URLSearchParams({api:'1',origin:start.name,destination:end.name,travelmode:{walk:'walking',drive:'driving',transit:'transit',motorcycle:'two-wheeler',bike:'bicycling'}[start.mode]});
@@ -152,6 +151,7 @@ async function initializeGoogleMaps(key){
  $('google-map').hidden=false;
  const map=new Map($('google-map'),{center:userLocation||{lat:23.7,lng:121},zoom:userLocation?16:7,gestureHandling:'greedy',scrollwheel:true,draggable:true,mapTypeId:'hybrid',mapTypeControl:true,mapTypeControlOptions:{position:google.maps.ControlPosition?.TOP_RIGHT},streetViewControl:true,fullscreenControl:false});
  window.adminBoundaries?.attachMap(map);
+ window.adminBoundaries?.attachSearch(async text=>{const result=await Place.searchByText({textQuery:text,fields:['id','displayName','formattedAddress','types','addressComponents','location','viewport'],maxResultCount:5,language:'zh-TW'});return result.places||[];});
  $('google-map').hidden=false;$('map-recovery').hidden=true;
  let version=0,markers=[],lines=[],userMovedMap=false;const legLines=new globalThis.Map();
  map.addListener('dragstart',()=>{userMovedMap=true;});
@@ -264,7 +264,7 @@ async function initializeGoogleMaps(key){
  const suggestions=document.createElement('div');suggestions.id='suggestions';$('add-form').append(suggestions);
  let session=new AutocompleteSessionToken(),searchTimer,searchVersion=0;
  $('place').addEventListener('input',()=>{selectedMapPlace=null;mapSelectionVersion++;const n=++searchVersion;clearTimeout(searchTimer);suggestions.replaceChildren();const input=$('place').value.trim();if(!input)return;searchTimer=setTimeout(async()=>{
-  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];const selectionRequest=++mapSelectionVersion;const selectingBoundary=window.adminBoundaries?.isSelecting();let boundaryPlace;try{const place=prediction.toPlace();boundaryPlace=place;await place.fetchFields({fields:['location','displayName','types','addressComponents','viewport']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch(error){toast('地點資料：'+apiError(error));}if(selectionRequest!==mapSelectionVersion||!trip.days.includes(chosenDay))return;window.adminBoundaries?.setCandidate(boundaryPlace);if(selectingBoundary){$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();return;}chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk',modeAuto:true});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
+  try{const result=await AutocompleteSuggestion.fetchAutocompleteSuggestions({input,sessionToken:session,language:'zh-TW'});if(n!==searchVersion)return;suggestions.replaceChildren();for(const item of result.suggestions||[]){if(!item.placePrediction)continue;const prediction=item.placePrediction;const b=button(prediction.text.toString(),'加入 '+prediction.text.toString(),async()=>{const chosenDay=trip.days[current];const selectionRequest=++mapSelectionVersion;try{const place=prediction.toPlace();await place.fetchFields({fields:['location']});if(place.location)locations.set(place.id,{id:place.id,location:place.location});}catch(error){toast('地點資料：'+apiError(error));}if(selectionRequest!==mapSelectionVersion||!trip.days.includes(chosenDay))return;chosenDay.stops.push({name:prediction.text.toString(),placeId:prediction.placeId,mode:'walk',modeAuto:true});$('place').value='';suggestions.replaceChildren();searchVersion++;session=new AutocompleteSessionToken();save();render();});b.type='button';suggestions.append(b);}if(suggestions.childElementCount){const attribution=document.createElement('small');attribution.textContent='Google Maps';suggestions.append(attribution);}}
   catch(error){if(n===searchVersion)mapStatus('地點建議：'+apiError(error));}
  },300);});
  function fillFromMap(name,placeId){
@@ -275,7 +275,7 @@ async function initializeGoogleMaps(key){
   $('place').scrollIntoView({block:'nearest'});$('place').focus({preventScroll:true});
  }
  map.addListener('click',async event=>{
-  if(window.adminBoundaries?.isSelecting()&&!event.placeId){toast('此圖示未提供行政區資訊，請使用搜尋建議選取行政區。');return;}
+  if(window.adminBoundaries?.isSelecting()&&!event.placeId){toast('此圖示未提供行政區資訊，請在範圍工具輸入地名後按「顯示範圍」。');return;}
   if(!event.placeId&&!event.latLng)return;
   if(event.placeId)event.stop();
   const request=++mapSelectionVersion;const inputBefore=$('place').value;
@@ -302,7 +302,7 @@ async function initializeGoogleMaps(key){
    }
    if(request!==mapSelectionVersion||$('place').value!==inputBefore)return;
    const selectingBoundary=window.adminBoundaries?.isSelecting();
-   window.adminBoundaries?.setCandidate(place);if(selectingBoundary)return;
+   if(selectingBoundary){window.adminBoundaries?.selectPlace(place);return;}
    const name=place.displayName||place.formattedAddress;if(!name){toast('無法取得此地點名稱');return;}
    if(place.location)locations.set(place.id,{id:place.id,location:place.location});
    fillFromMap(name,place.id);

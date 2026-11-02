@@ -12,8 +12,8 @@ before(async()=>{
 });
 after(async()=>{await browser?.close();server?.kill();});
 const sdk=(callback,transitBehavior)=>`(()=>{
- window.mapCalls={options:null,routes:[],markers:[],lines:[],fits:[]};
- class MockMap {constructor(element,options){mapCalls.options=options;}addListener(){}fitBounds(bounds){mapCalls.fits.push(bounds.count);}panTo(){}setZoom(){}getZoom(){return 16;}}
+ window.mapCalls={options:null,routes:[],markers:[],lines:[],fits:[],listeners:{}};
+ class MockMap {constructor(element,options){mapCalls.options=options;}addListener(name,fn){mapCalls.listeners[name]=fn;}fitBounds(bounds){mapCalls.fits.push(bounds.count);}panTo(){}setZoom(){}getZoom(){return 16;}}
  class Marker {constructor(options){this.options=options;mapCalls.markers.push(this);}setMap(map){this.options.map=map;}addListener(){}}
  class Data {constructor(){}forEach(){}remove(){}addGeoJson(){}}
  class Bounds {constructor(){this.count=0;}extend(){this.count++;}isEmpty(){return this.count===0;}}
@@ -143,19 +143,23 @@ test('unsupported motorcycle routes stay motorcycle and never silently use drivi
  assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),0);assert.deepEqual(errors,[]);await page.close();
 });
 
-test('selecting an administrative search suggestion offers an area without automatically querying the boundary provider',async()=>{
+test('administrative boundaries have their own mobile search and draw without changing the itinerary',async()=>{
  const {page,errors}=await pageWith({trip:itinerary});let boundaryRequests=0;
  await page.route('https://nominatim.openstreetmap.org/search?*',route=>{boundaryRequests++;return route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify([{osm_type:'relation',osm_id:999,name:'行政區測試',display_name:'行政區測試,日本',category:'boundary',type:'administrative',geojson:{type:'Polygon',coordinates:[[[120,24],[122,24],[122,26],[120,26],[120,24]]]}}])});});
- await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));await page.locator('#place').fill('行政區測試');await page.locator('#suggestions button').click();await page.locator('#add-boundary').waitFor({state:'visible'});assert.equal(boundaryRequests,0);await page.locator('#add-boundary').click();await page.locator('.boundary-row').waitFor();assert.equal(boundaryRequests,1);assert.equal(await page.locator('.stop').count(),3);assert.deepEqual(errors,[]);await page.close();
+ await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));
+ await page.waitForFunction(()=>mapCalls.lines.some(line=>line.map));
+ const before=await page.evaluate(()=>localStorage.getItem('roam-trip-v1'));
+ assert.equal(await page.locator('.sidebar .boundaries').count(),0,'area tool must not be inside itinerary');
+ await page.locator('#trip-overview').click();await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('#boundary-search').isVisible(),true);assert.equal(await page.locator('#day-title').textContent(),'全部日程','opening areas must not leave trip overview');
+ await page.locator('#boundary-search').fill('行政區測試');await page.locator('#search-boundary').click();await page.locator('.boundary-row').waitFor();assert.equal(boundaryRequests,1,'submit must actually query the boundary service');assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.evaluate(()=>localStorage.getItem('roam-trip-v1')),before);
+ assert.equal(await page.locator('#boundary-search').evaluate(e=>e===document.activeElement),false);
+ await page.locator('#boundary-search').fill('普通商家');await page.locator('#search-boundary').click();await page.waitForFunction(()=>document.querySelector('#boundary-status').textContent.includes('沒有回傳可識別的行政區'));assert.equal(await page.locator('.boundary-row').count(),1);assert.equal(boundaryRequests,1,'business should never reach the boundary provider');
+ await page.locator('#close-boundary-panel').click();assert.equal(await page.locator('.sidebar').isVisible(),true);assert.equal(await page.locator('#day-title').textContent(),'全部日程');assert.deepEqual(errors,[]);await page.close();
 });
 
-test('mobile area selection has a visible entry, works from overview and does not add route stops',async()=>{
- const {page,errors}=await pageWith({trip:itinerary});await page.waitForFunction(()=>Boolean(document.querySelector('#suggestions')));
- await page.locator('#trip-overview').click();assert.equal(await page.locator('#select-boundary').isVisible(),true);
- await page.locator('#select-boundary').click();assert.equal(await page.locator('#add-form').isVisible(),true);assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),true);
- const count=await page.locator('.stop').count();await page.locator('#place').fill('行政區測試');await page.locator('#suggestions button').click();
- await page.locator('#add-boundary').waitFor({state:'visible'});assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.locator('.stop').count(),count,'choosing a boundary must not add an itinerary stop');
- assert.equal(await page.locator('#place').evaluate(e=>e===document.activeElement),false,'dismiss the phone keyboard to expose the action');
- await page.locator('#select-boundary').click();await page.locator('#place').fill('普通商家');await page.locator('#suggestions button').click();await page.waitForFunction(()=>document.querySelector('#boundary-status').textContent.includes('不是可識別的行政區'));assert.equal(await page.locator('.stop').count(),count);assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),true);
- await page.locator('#cancel-boundary-selection').click();assert.equal(await page.locator('#cancel-boundary-selection').isVisible(),false);assert.equal(await page.locator('#place').getAttribute('placeholder'),'新增目的地');assert.deepEqual(errors,[]);await page.close();
+test('map picking also performs the boundary lookup rather than only showing instructions',async()=>{
+ const {page,errors}=await pageWith({trip:itinerary});
+ await page.route('https://nominatim.openstreetmap.org/search?*',route=>route.fulfill({headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify([{osm_type:'relation',osm_id:998,name:'行政區測試',category:'boundary',type:'administrative',geojson:{type:'Polygon',coordinates:[[[120,24],[122,24],[122,26],[120,26],[120,24]]]}}])}));
+ await page.waitForFunction(()=>Boolean(mapCalls.listeners.click));await page.locator('#boundary-tool-toggle').click();await page.locator('#select-boundary').click();
+ await page.evaluate(()=>mapCalls.listeners.click({placeId:'行政區測試',stop(){}}));await page.locator('.boundary-row').waitFor();assert.equal(await page.locator('#boundary-name').textContent(),'行政區測試');assert.equal(await page.locator('.stop').count(),2);assert.deepEqual(errors,[]);await page.close();
 });
