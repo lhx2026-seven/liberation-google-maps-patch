@@ -6,16 +6,15 @@
  const selection=document.getElementById('boundary-selection');
  const list=document.getElementById('boundary-list');
  const choices=document.getElementById('boundary-choices');
- let candidate=null,map=null,layer=null,busy=false,selecting=false,epoch=0,configPromise,searchPlaces=null,restoreSidebar=false;
+ let candidate=null,map=null,layer=null,busy=false,selecting=false,epoch=0,configPromise,searchPlaces=null;
  const lookupCache=new Map();
  let features=[];
  try{const stored=JSON.parse(localStorage.getItem(KEY));if(Array.isArray(stored))features=stored.filter(validFeature);}catch{}
  function message(text){status.textContent=text;}
- function sidebar(hidden){document.body.classList.toggle('panel-hidden',hidden);const toggle=document.getElementById('toggle-panel');toggle.textContent=hidden?'›':'‹';toggle.setAttribute('aria-expanded',String(!hidden));}
- function openPanel(){document.getElementById('boundary-panel').hidden=false;document.getElementById('boundary-tool-toggle').setAttribute('aria-expanded','true');if(innerWidth<=600&&!document.body.classList.contains('panel-hidden')){restoreSidebar=true;sidebar(true);}}
- function closePanel(){epoch++;setSelecting(false);document.getElementById('boundary-panel').hidden=true;document.getElementById('boundary-tool-toggle').setAttribute('aria-expanded','false');if(restoreSidebar){restoreSidebar=false;sidebar(false);}}
+ function openPanel(){document.getElementById('boundary-panel').hidden=false;document.body.classList.remove('boundary-panel-hidden');const toggle=document.getElementById('boundary-tool-toggle');toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-label','收合行政區邊界標示');toggle.textContent='‹';}
+ function closePanel(){epoch++;setSelecting(false);document.getElementById('boundary-panel').hidden=true;document.body.classList.add('boundary-panel-hidden');const toggle=document.getElementById('boundary-tool-toggle');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-label','展開行政區邊界標示');toggle.textContent='行政區邊界標示 ›';}
+ document.body.classList.add('boundary-panel-hidden');document.getElementById('boundary-tool-toggle').setAttribute('aria-label','展開行政區邊界標示');
  document.getElementById('boundary-tool-toggle').onclick=()=>{if(document.getElementById('boundary-panel').hidden)openPanel();else closePanel();};
- document.getElementById('close-boundary-panel').onclick=closePanel;
  function reveal(){openPanel();selection.scrollIntoView({block:'nearest'});}
  function setSelecting(value){selecting=value;document.getElementById('cancel-boundary-selection').hidden=!value;}
  document.getElementById('select-boundary').onclick=()=>{epoch++;candidate=null;choices.replaceChildren();setSelecting(true);message('請點地圖上的行政區；若地圖未提供選取資訊，可直接使用上方搜尋。');render();};
@@ -38,7 +37,7 @@
   finally{if(request===epoch){busy=false;render();}}
  };
 
- function updateKeyboardInset(){const viewport=window.visualViewport;const inset=viewport?Math.max(0,innerHeight-viewport.height-viewport.offsetTop):0;document.documentElement.style.setProperty('--boundary-keyboard-inset',inset+'px');}
+ function updateKeyboardInset(){const viewport=window.visualViewport;const inset=viewport?Math.max(0,innerHeight-viewport.height-viewport.offsetTop):0;document.documentElement.style.setProperty('--boundary-keyboard-inset',inset+'px');document.body.classList.toggle('boundary-keyboard-open',inset>80);}
  window.visualViewport?.addEventListener('resize',updateKeyboardInset);window.addEventListener('resize',updateKeyboardInset);updateKeyboardInset();
  function point(position){return {lat:typeof position?.lat==='function'?position.lat():position?.lat,lng:typeof position?.lng==='function'?position.lng():position?.lng};}
  function validGeometry(g){
@@ -87,18 +86,23 @@
   layer.forEach(feature=>layer.remove(feature));
   try{layer.addGeoJson({type:'FeatureCollection',features});}catch{message('部分邊界資料無法繪製，行程地圖仍可使用。');}
  }
+ function mapPadding(){
+  let left=40;
+  if(innerWidth>600){for(const id of ['boundary-panel']){const panel=document.getElementById(id);if(panel.getClientRects().length)left=Math.max(left,panel.getBoundingClientRect().right+32);}const tripPanel=document.querySelector('.sidebar');if(tripPanel.getClientRects().length)left=Math.max(left,tripPanel.getBoundingClientRect().right+32);}
+  return {top:60,right:40,bottom:60,left:Math.min(left,innerWidth-120)};
+ }
  function focus(feature){
   if(!map)return;
   const bounds=new google.maps.LatLngBounds();
   const polygons=feature.geometry.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry.coordinates;
   for(const rings of polygons)for(const coordinate of rings[0])bounds.extend({lat:coordinate[1],lng:coordinate[0]});
-  if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:40,bottom:60,left:innerWidth>600?420:40});
+  if(!bounds.isEmpty())map.fitBounds(bounds,mapPadding());
  }
  function render(){
   selection.hidden=!candidate;add.disabled=busy;document.getElementById('search-boundary').disabled=busy;document.getElementById('search-boundary').textContent=busy?'查詢中…':'顯示範圍';list.replaceChildren();
   document.getElementById('boundary-name').textContent=candidate?.name||'';
   document.getElementById('clear-boundaries').hidden=!features.length;
-  document.getElementById('boundary-attribution').hidden=!features.length&&!choices.children.length&&!candidate&&!selecting;
+  document.getElementById('boundary-attribution').hidden=!features.length&&!choices.children.length;
   for(const feature of features){
    const row=document.createElement('div');row.className='boundary-row';
    const name=document.createElement('button');name.type='button';name.textContent=feature.properties.name;name.title=feature.properties.label;name.onclick=()=>focus(feature);
@@ -160,10 +164,11 @@
  document.getElementById('clear-boundaries').onclick=()=>{epoch++;features=[];choices.replaceChildren();message('');save();updateLayer();render();};
  window.adminBoundaries={
   isSelecting(){return selecting;},
+  mapPadding,
   selectPlace(place){if(window.adminBoundaries.setCandidate(place))add.click();},
   attachSearch(fn){searchPlaces=fn;},
   reveal,
-  attachMap(value){map=value;try{layer=new google.maps.Data({map,style:{strokeColor:'#d93025',strokeWeight:2,strokeOpacity:1,fillColor:'#d93025',fillOpacity:0.04,clickable:false}});updateLayer();}catch{message('行政區圖層暫時無法啟用，行程地圖仍可使用。');}},
+  attachMap(value){map=value;try{layer=new google.maps.Data({map,style:{strokeColor:'#f57c00',strokeWeight:2,strokeOpacity:1,fillColor:'#f57c00',fillOpacity:0.04,clickable:false}});updateLayer();}catch{message('行政區圖層暫時無法啟用，行程地圖仍可使用。');}},
   setCandidate(place){
    epoch++;choices.replaceChildren();message('');
    if(!eligible(place)){candidate=null;if(selecting)message('這個結果不是可識別的行政區；請改選城市、鄉鎮或村里。');render();return false;}

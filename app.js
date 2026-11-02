@@ -256,7 +256,7 @@ async function initializeGoogleMaps(key){
    if(summary)messages.push((overview?`第 ${dayIndex+1} 天：`:'')+summary);
    }
    if(request!==version)return;
-   if(!bounds.isEmpty())map.fitBounds(bounds,{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
+   if(!bounds.isEmpty())map.fitBounds(bounds,window.adminBoundaries?.mapPadding()||{top:60,right:60,bottom:60,left:innerWidth>600?420:40});
    mapStatus(messages.join('\n'));
   }
  };
