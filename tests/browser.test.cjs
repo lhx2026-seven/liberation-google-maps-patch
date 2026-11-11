@@ -78,12 +78,12 @@ for(const transitBehavior of ['fallback','zero'])test(`empty transit results ret
  const calls=await page.evaluate(()=>mapCalls.routes);assert.equal(calls.length,2);assert.equal(calls[0].origin.id,'MYJ');assert.equal(calls[1].origin.id,undefined);assert.equal(calls[1].origin.lat,25);assert.equal(Object.hasOwn(calls[1],'departureTime'),false);assert.equal(calls[1].travelMode,'TRANSIT');
  assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'transit');assert(await page.evaluate(()=>mapCalls.lines.some(l=>l.map)));assert.deepEqual(errors,[]);await page.close();
 });
-test('missing transit data offers an exact-place Maps link and labels incomplete totals',async()=>{
+test('missing transit data offers an exact-place Maps link and flags missing routes without totaling time',async()=>{
  const trip=structuredClone(transitTrip);trip.days[0].stops[1].mode='drive';trip.days[0].stops.push({name:'飯店',placeId:'hotel',mode:'walk',modeAuto:false});
  const {page,errors}=await pageWith({trip,transitBehavior:'empty'});
- await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('缺 1 段交通時間'));
+ await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('尚有 1 段未取得路線'));
  const link=page.locator('.leg-estimate a');assert.equal(await link.count(),1);const url=new URL(await link.getAttribute('href'));assert.equal(url.searchParams.get('travelmode'),'transit');assert.equal(url.searchParams.get('origin_place_id'),'MYJ');assert.equal(url.searchParams.get('destination_place_id'),'castle');
- assert.match(await page.locator('#map-status').textContent(),/已取得路段/);assert.match(await page.locator('#map-status').textContent(),/無法估算完整行程/);assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'transit');assert.equal(await page.evaluate(()=>mapCalls.routes.filter(r=>r.travelMode==='TRANSIT').length),2);assert.deepEqual(errors,[]);await page.close();
+ assert.match(await page.locator('#map-status').textContent(),/已顯示 1 段路線/);assert.doesNotMatch(await page.locator('#map-status').textContent(),/分鐘|小時|交通約/);assert.equal(await page.locator('[data-mode-index="0"]').inputValue(),'transit');assert.equal(await page.evaluate(()=>mapCalls.routes.filter(r=>r.travelMode==='TRANSIT').length),2);assert.deepEqual(errors,[]);await page.close();
 });
 test('transit permission errors never trigger fallback requests',async()=>{
  const {page,errors}=await pageWith({trip:transitTrip,transitBehavior:'denied'});
@@ -115,7 +115,7 @@ test('trip title shows every day on one map without cross-day connections and re
 test('one missing transit day does not erase routes from other days in overview',async()=>{
  const trip=structuredClone(multiDayTrip);trip.days[0].stops[0].mode='transit';
  const {page,errors}=await pageWith({trip,transitBehavior:'empty'});
- await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('缺 1 段'));
+ await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('尚有 1 段'));
  await page.locator('#trip-overview').click();await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('第 3 天：尚無停靠點'));
  assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),1);assert.match(await page.locator('#map-status').textContent(),/第 1 天/);assert.match(await page.locator('#map-status').textContent(),/第 2 天/);assert.deepEqual(errors,[]);await page.close();
 });
@@ -178,4 +178,13 @@ test('desktop drawers align at the top and independently support all four open s
  assert.equal(await page.locator('.boundary-heading strong').evaluate(e=>getComputedStyle(e).fontSize),await page.locator('#trip-overview').evaluate(e=>getComputedStyle(e).fontSize));
  await page.locator('#toggle-panel').click();assert.equal(await page.locator('#boundary-panel').isVisible(),true);await page.locator('#boundary-tool-toggle').click();assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('#boundary-panel').isVisible(),false);assert.equal(await page.locator('#toggle-panel').textContent(),'行程規劃 ›');{const first=await page.locator('#toggle-panel').boundingBox(),second=await page.locator('#boundary-tool-toggle').boundingBox();assert.equal(first.width,second.width);assert.equal(first.height,second.height);assert.equal(first.x,second.x);assert(first.y+first.height<second.y);}assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.deepEqual(errors,[]);await page.close();
+});
+
+test('each transit leg requests only a route using server time and hides transit and total durations',async()=>{
+ const trip={name:'Independent transit',days:[{stops:[{name:'A',placeId:'A',mode:'drive',modeAuto:false},{name:'B',placeId:'B',mode:'transit',modeAuto:false},{name:'C',placeId:'C',mode:'transit',modeAuto:false},{name:'D',placeId:'D',mode:'walk',modeAuto:false}]}]};
+ const {page,errors}=await pageWith({trip});await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('已顯示 3 段路線'));
+ const requests=await page.evaluate(()=>mapCalls.routes.filter(r=>r.travelMode==='TRANSIT'));assert.equal(requests.length,2);
+ for(const request of requests){assert.equal(Object.hasOwn(request,'departureTime'),false);assert.equal(Object.hasOwn(request,'arrivalTime'),false);assert.deepEqual(request.fields,['path','warnings']);}
+ assert.match(await page.locator('[data-leg="0"]').textContent(),/10 分鐘/);for(const index of [1,2]){assert.equal(await page.locator(`[data-leg="${index}"]`).textContent(),'大眾運輸路線（現在出發）');}
+ assert.doesNotMatch(await page.locator('#map-status').textContent(),/分鐘|小時|交通約/);assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),3);assert.deepEqual(errors,[]);await page.close();
 });
