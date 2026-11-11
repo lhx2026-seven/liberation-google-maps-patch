@@ -15,6 +15,7 @@ function button(label,title,fn){const b=document.createElement('button');b.type=
 function samePlace(a,b){return Boolean(a&&b&&(a.placeId&&b.placeId?a.placeId===b.placeId:a.name===b.name));}
 function render(){
  $('trip-name').value=trip.name;$('trip-overview').textContent=trip.name;$('trip-overview').setAttribute('aria-pressed',String(overview));$('trip-count').textContent=`${trip.days.length} 天 · ${trip.days.reduce((n,d)=>n+d.stops.length,0)} 個停靠點`;
+ $('all-routes').classList.toggle('active',overview);$('all-routes').setAttribute('aria-pressed',String(overview));
  $('days').replaceChildren();trip.days.forEach((d,i)=>{const b=button(`第 ${i+1} 天`,`第 ${i+1} 天`,()=>{overview=false;current=i;render();});b.className=!overview&&i===current?'active':'';b.setAttribute('role','tab');b.setAttribute('aria-selected',!overview&&i===current);$('days').append(b);});
  $('day-title').textContent=overview?'全部日程':`第 ${current+1} 天`;$('day-actions').hidden=overview;$('overview-days').hidden=!overview;$('stops').hidden=overview;$('add-form').hidden=overview;$('delete-day').hidden=trip.days.length===1;$('clear-day').disabled=trip.days[current].stops.length===0;$('move-day-before').disabled=current===0;$('move-day-after').disabled=current===trip.days.length-1;
  const stops=trip.days[current].stops;$('stops').replaceChildren();const previousEnd=current>0?trip.days[current-1].stops.at(-1):null;$('carry-start').hidden=overview||current===0;$('carry-start').disabled=!previousEnd||samePlace(stops[0],previousEnd);$('carry-start').title=!previousEnd?'前一天沒有停靠點':samePlace(stops[0],previousEnd)?'起點已是前一天終點':previousEnd.name;
@@ -30,7 +31,9 @@ function render(){
 
 }
 function finishTripName(){trip.name=$('trip-name').value.trim()||'行程規劃';$('trip-name').hidden=true;$('trip-overview').hidden=false;save();render();}
-$('trip-overview').onclick=()=>{overview=true;resetDestinationInput();render();};
+function showAllRoutes(){overview=true;resetDestinationInput();render();}
+$('trip-overview').onclick=showAllRoutes;
+$('all-routes').onclick=showAllRoutes;
 $('edit-trip-name').onclick=()=>{$('trip-overview').hidden=true;$('trip-name').hidden=false;$('trip-name').focus();$('trip-name').select();};
 $('trip-name').onblur=finishTripName;
 $('trip-name').onkeydown=event=>{if(event.key==='Enter'){$('trip-name').blur();}};

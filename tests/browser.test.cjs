@@ -188,3 +188,12 @@ test('each transit leg requests only a route using server time and hides transit
  assert.match(await page.locator('[data-leg="0"]').textContent(),/10 分鐘/);for(const index of [1,2]){assert.equal(await page.locator(`[data-leg="${index}"]`).textContent(),'大眾運輸路線（現在出發）');}
  assert.doesNotMatch(await page.locator('#map-status').textContent(),/分鐘|小時|交通約/);assert.equal(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).length),3);assert.deepEqual(errors,[]);await page.close();
 });
+
+test('All routes control simultaneously retains lines from different days',async()=>{
+ const {page,errors}=await pageWith({trip:multiDayTrip});await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1);
+ await page.locator('#days button').nth(1).click();await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1&&mapCalls.lines.find(l=>l.map).options.strokeColor==='#9334e6');
+ await page.locator('#all-routes').click();await page.waitForFunction(()=>document.querySelector('#map-status').textContent.includes('第 3 天：尚無停靠點'));
+ assert.equal(await page.locator('#all-routes').getAttribute('aria-pressed'),'true');assert.deepEqual(await page.evaluate(()=>mapCalls.lines.filter(l=>l.map).map(l=>l.options.strokeColor)),['#d93025','#9334e6']);
+ assert.deepEqual(await page.evaluate(()=>mapCalls.markers.filter(m=>m.options.map).map(m=>m.options.label)),['1-1','1-2','2-1','2-2']);
+ await page.locator('#days button').first().click();await page.waitForFunction(()=>mapCalls.lines.filter(l=>l.map).length===1&&mapCalls.lines.find(l=>l.map).options.strokeColor==='#d93025');assert.equal(await page.locator('#all-routes').getAttribute('aria-pressed'),'false');assert.deepEqual(errors,[]);await page.close();
+});
